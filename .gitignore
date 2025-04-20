@@ -1,0 +1,14 @@
+*.egg
+*.pyc
+__pycache__/
+*.egg-info/
+.venv/
+dist/*
+build/*
+build_and_upload.bat
+toml_versioner.py
+toml_update_requirements.py
+upload_html.py
+*.html
+misc/*
+artwork/*
