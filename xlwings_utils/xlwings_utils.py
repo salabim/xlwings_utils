@@ -5,23 +5,27 @@
 #  /_/\_\|_|  \_/\_/  |_||_| |_| \__, ||___/ _____  \__,_| \__||_||_||___/
 #                                |___/      |_____|
 
-__version__ = "0.0.3"
+__version__ = "0.0.7"
 
 
 import dropbox
 from pathlib import Path
-import sys
 import os
+import sys
 
 _captured_stdout = []
 dbx = None
+Pythonista = sys.platform == "ios"
 
 
 def dropbox_init(refresh_token=None, app_key=None, app_secret=None):
-    '''
+    """
     dropbox initialize
 
-    This function has to be called prior to using any dropbox function
+    This function may to be called prior to using any dropbox function
+    to specify the request token, app key and app secret.
+    If these are specified as REFRESH_TOKEN, APP_KEY and APP_SECRET
+    environment variables, it is no necessary to call dropbox_init().
 
     Parameters
     ----------
@@ -29,13 +33,13 @@ def dropbox_init(refresh_token=None, app_key=None, app_secret=None):
         oauth2 refreshntoken
 
         if omitted: use the environment variable REFRESH_TOKEN
-        
+
     app_key : str
         app key
 
         if omitted: use the environment variable APP_KEY
 
-                
+
     app_secret : str
         app secret
 
@@ -44,160 +48,335 @@ def dropbox_init(refresh_token=None, app_key=None, app_secret=None):
     Returns
     -------
     -
-    '''
-    if refresh_token is None:
-        refresh_token =os.environ["REFRESH_TOKEN"]
-    if app_key is None:
-        app_key=os.environ["APP_KEY"]
-    if app_secret is None:
-        app_secret =os.environ["APP_SECRET"]
-
+    """
     global dbx
+
+    if Pythonista:
+        # under Pythonista, the environ is updated from the .environ.toml file, if present
+        environ_file = Path(os.environ["HOME"]) / "Documents" / ".environ.toml"
+
+        if environ_file.is_file():
+            with open(environ_file, "r") as f:
+                import toml
+
+                d = toml.load(f)
+                os.environ.update(d)
+
+    if refresh_token is None:
+        if "REFRESH_TOKEN" in os.environ:
+            refresh_token = os.environ["REFRESH_TOKEN"]
+        else:
+            raise ValueError("no REFRESH_TOKEN found in environment.")
+    if app_key is None:
+        if "APP_KEY" in os.environ:
+            app_key = os.environ["APP_KEY"]
+        else:
+            raise ValueError("no APP_KEY found in environment.")
+    if app_secret is None:
+        if "APP_SECRET" in os.environ:
+            app_secret = os.environ["APP_SECRET"]
+        else:
+            raise ValueError("no APP_SECRET found in environment.")
+
     dbx = dropbox.Dropbox(oauth2_refresh_token=refresh_token, app_key=app_key, app_secret=app_secret)
-    
-def _check_dbx():
+    try:
+        dbx.files_list_folder(path="")  # just to test proper credentials
+    except dropbox.exceptions.AuthError:
+        raise ValueError("invalid dropbox credentials")
+
+
+def _login_dbx():
     if dbx is None:
-        raise ValueError('not initialized. Please call dropbox_init()')
+        dropbox_init()  # use environment
 
 
-def list_dropbox(path="", recursive=False):
-    '''
+def list_dropbox(path="", recursive=False, show_files=True, show_folders=False):
+    """
     list_dropbox
-    
-    returns all dropbox files in path
-    
+
+    returns all dropbox files/folders in path
+
     Parameters
     ----------
     path : str or Pathlib.Path
         path from which to list all files (default: '')
-        
-        
+
     recursive : bool
         if True, recursively list files. if False (default) no recursion
-        
+
+    show_files : bool
+        if True (default), show file entries
+        if False, do not show file entries
+
+    show_folders : bool
+        if True, show folder entries
+        if False (default), do not show folder entries
+
     Returns
     -------
-    files, relative to path : list
-    '''
-    _check_dbx()
+    files : list
+
+    Note
+    ----
+    Directory entries are never returned
+
+    Note
+    ----
+    If REFRESH_TOKEN, APP_KEY and APP_SECRET environment variables are specified,
+    it is not necessary to call dropbox_init() prior to any dropbox function.
+    """
+    _login_dbx()
     out = []
     result = dbx.files_list_folder(path, recursive=recursive)
 
     for entry in result.entries:
-        if isinstance(entry, dropbox.files.FileMetadata):
+        if show_files and isinstance(entry, dropbox.files.FileMetadata):
             out.append(entry.path_display)
+        if show_folders and isinstance(entry, dropbox.files.FolderMetadata):
+            out.append(entry.path_display + "/")
 
     while result.has_more:
         result = dbx.files_list_folder_continue(result.cursor)
         for entry in result.entries:
-            if isinstance(entry, dropbox.files.FileMetadata):
+            if show_files and isinstance(entry, dropbox.files.FileMetadata):
                 out.append(entry.path_display)
+            if show_folders and isinstance(entry, dropbox.files.FolderMetadata):
+                out.append(entry.path_display + "/")
 
     return out
 
 
 def read_dropbox(dropbox_path):
-    '''
+    """
     read_dropbox
-    
+
     read from dopbox at given path
-    
+
     Parameters
     ----------
-    path : str or Pathlib.Path
+    dropbox_path : str or Pathlib.Path
         path to read from
-        
+
     Returns
     -------
     contents of the dropbox file : bytes
-    '''
 
-    _check_dbx()
+    Note
+    ----
+    If REFRESH_TOKEN, APP_KEY and APP_SECRET environment variables are specified,
+    it is not necessary to call dropbox_init() prior to any dropbox function.
+    """
+
+    _login_dbx()
     metadata, response = dbx.files_download(dropbox_path)
     file_content = response.content
     return file_content
 
 
 def write_dropbox(dropbox_path, contents):
-    _check_dbx()
+    _login_dbx()
+    """
+    write_dropbox
+    
+    write from dopbox at given path
+    
+    Parameters
+    ----------
+    dropbox_path : str or Pathlib.Path
+        path to write to
+
+    contents : bytes
+        contents to be written
+        
+    Note
+    ----
+    If REFRESH_TOKEN, APP_KEY and APP_SECRET environment variables are specified,
+    it is not necessary to call dropbox_init() prior to any dropbox function.
+    """
     dbx.files_upload(contents, dropbox_path, mode=dropbox.files.WriteMode.overwrite)
 
 
-def list_pyodide(path):
+def list_local(path, recursive=False, show_files=True, show_folders=False):
+    """
+    list_local
+
+    returns all local files/folders in path
+
+    Parameters
+    ----------
+    path : str or Pathlib.Path
+        path from which to list all files (default: '')
+
+    recursive : bool
+        if True, recursively list files. if False (default) no recursion
+
+    show_files : bool
+        if True (default), show file entries
+        if False, do not show file entries
+
+    show_folders : bool
+        if True, show folder entries
+        if False (default), do not show folder entries
+     
+    Returns
+    -------
+    files, relative to path : list
+    """
     path = Path(path)
-    return list(path.iterdir())
+
+    result = []
+    for entry in path.iterdir():
+        if entry.is_file():
+            if show_files:
+                result.append(str(entry))
+        elif entry.is_dir():
+            if show_folders:
+                result.append(str(entry) + "/")
+            if recursive:
+                result.extend(list_local(entry, recursive=recursive, show_files=show_files, show_folders=show_folders))
+    return result
 
 
-def write_pyodide(path, contents):
+def write_local(path, contents):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "wb") as f:
         f.write(contents)
 
 
-def read_pyodide(path):
+def read_local(path):
     path = Path(path)
     with open(path, "rb") as f:
         contents = f.read()
     return contents
 
+
 class block:
-    def __init__(self, number_of_rows,number_of_columns):
-        self.dict={}
-        self.number_of_columns=number_of_columns
-        self.number_of_rows=number_of_rows
+    """
+    block is 2 dimensional data structure with 1 as lowest index (like xlwings range)
 
-    @classmethod
-    def from_list_of_lists(cls, list_of_lists, column_like=False):
-        if not isinstance(list_of_lists[0],list):
-            if column_like:
-                list_of_lists=[[value] for value in list_of_lists]
-            else:
-                list_of_lists=[list_of_lists]
+    Parameters
+    ----------
+    number_of_rows : int
+        number of rows
 
-        self=cls(0,0)
+    number_of_columns : int
+        number of columns
 
-        self.number_of_rows=len(list_of_lists)
-        self.number_of_columns=0
+    Returns
+    -------
+    block
+    """
+
+    def __init__(self, value=None, *, number_of_rows=None, number_of_columns=None,column_like=False):
+        self.dict = {}
+        self.column_like=column_like
+        if value is None:
+            if number_of_rows is None:
+                 number_of_rows=1
+            if number_of_columns is None:
+                 number_of_columns=1
+            self.number_of_rows=number_of_rows
+            self.number_of_columns=number_of_columns                 
+            
+        else:
+            if isinstance(value,block):
+                value=value.value
+            self.value=value
+            if number_of_rows is not None:
+                self.number_of_rows=number_of_rows
+            if number_of_columns is not None:
+                self.number_of_columns=number_of_columns            
+
         
+    @property
+    def value(self):
+        return [[self.dict.get((row, column)) for column in range(1, self.number_of_columns + 1)] for row in range(1, self.number_of_rows + 1)]
+        
+    @value.setter
+    def value(self,value): 
+        if not isinstance(value, list):
+            value = [[value]]
+        if not isinstance(value[0], list):
+            if self.column_like:
+                value = [[item] for item in value]
+            else:
+                value = [value]
 
-        for row,row_contents in enumerate(list_of_lists,1):
-            for column,value in enumerate(row_contents,1):
-                if value is not None:
-                    self.dict[row,column]=value
-                    self.number_of_columns=max(self.number_of_columns, column)  
-        return self
-    
+
+        self.number_of_rows = len(value)
+        self._number_of_columns = 0
+
+        for row, row_contents in enumerate(value, 1):
+            for column, item in enumerate(row_contents, 1):
+                if item is not None:
+                    self.dict[row, column] = item
+                    self._number_of_columns = max(self.number_of_columns, column)                
+
+
     def __setitem__(self, row_column, value):
-        row,column=row_column
-        if row<1 or row>self.number_of_rows:
-            raise IndexError
-        if column<1 or column>self.number_of_columns:
-            raise IndexError
-        self.dict[row,column]=value
+        row, column = row_column
+        if row < 1 or row > self.number_of_rows:
+            raise IndexError(f"row must be between 1 and {self.number_of_rows} not {row}")
+        if column < 1 or column > self.number_of_columns:
+            raise IndexError(f"column must be between 1 and {self.number_of_columns} not {column}")
+        self.dict[row, column] = value
 
     def __getitem__(self, row_column):
-        row,column=row_column
-        if row<1 or row>self.number_of_rows:
-            raise IndexError
-        if column<1 or column>self.number_of_columns:
-            raise IndexError
-        return self.dict.get((row,column))
+        row, column = row_column
+        if row < 1 or row > self.number_of_rows:
+            raise IndexError(f"row must be between 1 and {self.number_of_rows} not {row}")
+        if column < 1 or column > self.number_of_columns:
+            raise IndexError(f"column must be between 1 and {self.number_of_columns} not {column}")
+        return self.dict.get((row, column))
+        
+    def minimized(self):
+        return block(self, number_of_rows=self.highest_used_row_number, number_of_columns=self.highest_used_column_number)
 
     @property
-    def as_list_of_lists(self):
-        return [[self.dict.get((row,column)) for column in range(1,self.number_of_columns+1)] for row in range(1,self.number_of_rows+1)]
+    def number_of_rows(self):
+        return self._number_of_rows
+
+    @number_of_rows.setter
+    def number_of_rows(self, value):
+        if value < 1:
+            raise ValueError(f"number_of_rows should be >=1, not {value}")
+        self._number_of_rows = value
+        for row, column in list(self.dict):
+            if row > self._number_of_rows:
+                del self.dict[row, column]
+
+    @property
+    def number_of_columns(self):
+        return self._number_of_columns
+
+    @number_of_columns.setter
+    def number_of_columns(self, value):
+        if value < 1:
+            raise ValueError(f"number_of_columns should be >=1, not {value}")
+        self._number_of_columns = value
+        for row, column in list(self.dict):
+            if column > self._number_of_columns:
+                del self.dict[row, column]
     
 
     @property
-    def as_minimal_list_of_lists(self):
-        number_of_rows=max(row for row,column in self.dict)
-        number_of_columns=max(column for row,column in self.dict)
-        return [[self.dict.get((row,column)) for column in range(1,number_of_columns+1)] for row in range(1,number_of_rows+1)]
+    def highest_used_row_number(self):
+        if self.dict:
+            return max(row for (row, column) in self.dict)
+        else:
+            return 1
 
+    @property
+    def highest_used_column_number(self):
+        if self.dict:
+            return max(column for (row, column) in self.dict)
+        else:
+            return 1
 
     def __repr__(self):
-        return f"block.from_list_of_lists({self.as_list_of_lists})"
+        return f"block({self.value})"
+
 
 def clear_captured_stdout():
     """
@@ -208,7 +387,7 @@ def clear_captured_stdout():
 
 def captured_stdout_as_str():
     """
-    returns the captured stdout as a list of strings
+    returns the captured stdout as a string
 
     Returns
     -------
@@ -219,22 +398,25 @@ def captured_stdout_as_str():
     return "".join(_captured_stdout)
 
 
-def captured_stdout_as_range():
+def captured_stdout_as_value():
     """
-    returns the captured stdout as a list of strings
+    returns the captured stdout as a list of lists
 
     Returns
     -------
     captured stdout : list
         each line is an element of the list
-    """
 
+    Note
+    ----
+    This can be used directly to fill a xlwings range
+    """
     return [[line] for line in captured_stdout_as_str().splitlines()]
 
 
 class capture_stdout:
     """
-    specifies how to capture stdout
+    start capture stdout
 
     Parameters
     ----------
@@ -274,31 +456,3 @@ class capture_stdout:
 
 if __name__ == "__main__":
     ...
-
-
-# @xw.script
-# def test_stdout(book: xw.Book):
-#     with capture_stdout():
-#         for i in range(10):
-#             print(10 * f'{i}')
-#     book.sheets.active.range("A1").value=captured_stdout_as_range()
-
-
-# @xw.script
-# def test(book: xw.Book):
-#     dropbox_init(
-#         refresh_token=REFRESH_TOKEN,
-#         app_key=APP_KEY,
-#         app_secret=APP_SECRET,
-#     )
-
-#     files =list_dropbox("/Downloads",recursive=True)
-#     peek(files)
-#     write_pyodide("Test/x.x", b"abc")
-#     files = list_pyodide("Test")
-
-#     # files=list_dropbox_files("/Downloads")
-#     # peek(files)
-#     contents = read_dropbox("/Downloads/dropbox setup.py")
-#     write_dropbox("/Downloads/dropbox setup1.py", contents)
-#     peek("done")

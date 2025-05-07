@@ -10,11 +10,12 @@ authors = [
     { name = "Ruud van der Ham", email = "rt.van.der.ham@gmail.com" },
 ]
 description = "xlwings_utils"
-version = "0.0.3"
+version = "0.0.7"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "dropbox",
+    "ssl",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
