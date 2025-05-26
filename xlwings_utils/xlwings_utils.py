@@ -5,18 +5,22 @@
 #  /_/\_\|_|  \_/\_/  |_||_| |_| \__, ||___/ _____  \__,_| \__||_||_||___/
 #                                |___/      |_____|
 
-__version__ = "0.0.7"
+__version__ = "25.0.0"
 
 
 import dropbox
 from pathlib import Path
 import os
 import sys
+import math
 
-_captured_stdout = []
 dbx = None
 Pythonista = sys.platform == "ios"
-
+try:
+    import xlwings
+    xlwings = True
+except ImportError:
+    xlwings=False
 
 def dropbox_init(refresh_token=None, app_key=None, app_secret=None):
     """
@@ -217,7 +221,7 @@ def list_local(path, recursive=False, show_files=True, show_folders=False):
     show_folders : bool
         if True, show folder entries
         if False (default), do not show folder entries
-     
+
     Returns
     -------
     files, relative to path : list
@@ -268,33 +272,57 @@ class block:
     block
     """
 
-    def __init__(self, value=None, *, number_of_rows=None, number_of_columns=None,column_like=False):
+    def __init__(self, value=None, *, number_of_rows=None, number_of_columns=None, column_like=False):
         self.dict = {}
-        self.column_like=column_like
+        self.column_like = column_like
         if value is None:
             if number_of_rows is None:
-                 number_of_rows=1
+                number_of_rows = 1
             if number_of_columns is None:
-                 number_of_columns=1
-            self.number_of_rows=number_of_rows
-            self.number_of_columns=number_of_columns                 
-            
-        else:
-            if isinstance(value,block):
-                value=value.value
-            self.value=value
-            if number_of_rows is not None:
-                self.number_of_rows=number_of_rows
-            if number_of_columns is not None:
-                self.number_of_columns=number_of_columns            
+                number_of_columns = 1
+            self.number_of_rows = number_of_rows
+            self.number_of_columns = number_of_columns
 
-        
+        else:
+            if isinstance(value, block):
+                value = value.value
+            self.value = value
+            if number_of_rows is not None:
+                self.number_of_rows = number_of_rows
+            if number_of_columns is not None:
+                self.number_of_columns = number_of_columns
+
+    @classmethod
+    def from_xlrd_sheet(cls, sheet, number_of_rows=None, number_of_columns=None):
+        v = [sheet.row_values(row_idx)[0 : sheet.ncols] for row_idx in range(0, sheet.nrows)]
+        return cls(v, number_of_rows=number_of_rows, number_of_columns=number_of_columns)
+
+    @classmethod
+    def from_openpyxl_sheet(cls, sheet, number_of_rows=None, number_of_columns=None):
+        v = [[cell.value for cell in row] for row in sheet.iter_rows()]
+        return cls(v, number_of_rows=number_of_rows, number_of_columns=number_of_columns)
+
+    @classmethod
+    def from_file(cls, filename, number_of_rows=None, number_of_columns=None):
+        with open(filename, "r") as f:
+            v = [[line if line else None] for line in f.read().splitlines()]
+        return cls(v, number_of_rows=number_of_rows, number_of_columns=number_of_columns)
+
+    @classmethod
+    def from_dataframe(cls, df, number_of_rows=None, number_of_columns=None):
+        v = df.values.tolist()
+        return cls(v, number_of_rows=number_of_rows, number_of_columns=number_of_columns)
+
+    def to_openpyxl_sheet(self, sheet):
+        for row in self.value:
+            sheet.append(row)
+
     @property
     def value(self):
         return [[self.dict.get((row, column)) for column in range(1, self.number_of_columns + 1)] for row in range(1, self.number_of_rows + 1)]
-        
+
     @value.setter
-    def value(self,value): 
+    def value(self, value):
         if not isinstance(value, list):
             value = [[value]]
         if not isinstance(value[0], list):
@@ -303,16 +331,14 @@ class block:
             else:
                 value = [value]
 
-
         self.number_of_rows = len(value)
         self._number_of_columns = 0
 
         for row, row_contents in enumerate(value, 1):
             for column, item in enumerate(row_contents, 1):
-                if item is not None:
+                if item and not (isinstance(item, float) and math.isnan(item)):
                     self.dict[row, column] = item
-                    self._number_of_columns = max(self.number_of_columns, column)                
-
+                    self._number_of_columns = max(self.number_of_columns, column)
 
     def __setitem__(self, row_column, value):
         row, column = row_column
@@ -329,8 +355,14 @@ class block:
         if column < 1 or column > self.number_of_columns:
             raise IndexError(f"column must be between 1 and {self.number_of_columns} not {column}")
         return self.dict.get((row, column))
-        
+
     def minimized(self):
+        """
+        Returns
+        -------
+        minimized block : block
+             uses highest_used_row_number and highest_used_column_number to minimize the block
+        """
         return block(self, number_of_rows=self.highest_used_row_number, number_of_columns=self.highest_used_column_number)
 
     @property
@@ -358,7 +390,6 @@ class block:
         for row, column in list(self.dict):
             if column > self._number_of_columns:
                 del self.dict[row, column]
-    
 
     @property
     def highest_used_row_number(self):
@@ -377,82 +408,346 @@ class block:
     def __repr__(self):
         return f"block({self.value})"
 
+    def _check_row(self, row, name):
+        if row < 1:
+            raise ValueError(f"{name}={row} < 1")
+        if row > self.number_of_rows:
+            raise ValueError(f"{name}={row} > number_of_rows={self.number_of_rows}")
 
-def clear_captured_stdout():
+    def _check_column(self, column, name):
+        if column < 1:
+            raise ValueError(f"{name}={column} < 1")
+        if column > self.number_of_columns:
+            raise ValueError(f"{name}={column} > number_of_columns={self.number_of_columns}")
+
+    def vlookup(self, s, *, row_from=1, row_to=None, column1=1, column2=None):
+        """
+        searches in column1 for row between row_from and row_to for s and returns the value found at (that row, column2)
+
+        Parameters
+        ----------
+        s : any
+            value to seach for
+
+        row_from : int
+             row to start search (default 1)
+
+             should be between 1 and number_of_rows
+
+        row_to : int
+             row to end search (default number_of_rows)
+
+             should be between 1 and number_of_rows
+
+        column1 : int
+             column to search in (default 1)
+
+             should be between 1 and number_of_columns
+
+        column2 : int
+             column to return looked up value from (default column1 + 1)
+
+             should be between 1 and number_of_columns
+
+        Returns
+        -------
+        block[found row number, column2] : any
+
+        Note
+        ----
+        If s is not found, a ValueError is raised
+        """
+        if column2 is None:
+            column2 = column1 + 1
+        self._check_column(column2, "column2")
+        row = self.lookup_row(s, row_from=row_from, row_to=row_to, column1=column1)
+        return self[row, column2]
+
+    def lookup_row(self, s, *, row_from=1, row_to=None, column1=1):
+        """
+        searches in column1 for row between row_from and row_to for s and returns that row number
+
+        Parameters
+        ----------
+        s : any
+            value to seach for
+
+        row_from : int
+             row to start search (default 1)
+
+             should be between 1 and number_of_rows
+
+        row_to : int
+             row to end search (default number_of_rows)
+
+             should be between 1 and number_of_rows
+
+        column1 : int
+             column to search in (default 1)
+
+             should be between 1 and number_of_columns
+
+        column2 : int
+             column to return looked up value from (default column1 + 1)
+
+        Returns
+        -------
+        row number where block[row nunber, column1] == s : int
+
+        Note
+        ----
+        If s is not found, a ValueError is raised
+        """
+        if row_to is None:
+            row_to = self.highest_used_row_number
+        self._check_row(row_from, "row_from")
+        self._check_row(row_to, "row_to")
+        self._check_column(column1, "column1")
+
+        for row in range(row_from, row_to + 1):
+            if self[row, column1] == s:
+                return row
+        raise ValueError(f"{s} not found")
+
+    def hlookup(self, s, *, column_from=1, column_to=None, row1=1, row2=None):
+        """
+        searches in row1 for column between column_from and column_to for s and returns the value found at (that column, row2)
+
+        Parameters
+        ----------
+        s : any
+            value to seach for
+
+        column_from : int
+             column to start search (default 1)
+
+             should be between 1 and number_of_columns
+
+        column_to : int
+             column to end search (default number_of_columns)
+
+             should be between 1 and number_of_columns
+
+        row1 : int
+             row to search in (default 1)
+
+             should be between 1 and number_of_rows
+
+        row2 : int
+             row to return looked up value from (default row1 + 1)
+
+             should be between 1 and number_of_rows
+
+        Returns
+        -------
+        block[row, found column, row2] : any
+
+        Note
+        ----
+        If s is not found, a ValueError is raised
+        """
+        if row2 is None:
+            row2 = row1 + 1
+        self._check_row(row2, "row2")
+        column = self.lookup_column(s, column_from=column_from, column_to=column_to, row1=row1)
+        return self[row2, column]
+
+    def lookup_column(self, s, *, column_from=1, column_to=None, row1=1):
+        """
+        searches in row1 for column between column_from and column_to for s and returns that column number
+
+        Parameters
+        ----------
+        s : any
+            value to seach for
+
+        column_from : int
+             column to start search (default 1)
+
+             should be between 1 and number_of_columns
+
+        column_to : int
+             column to end search (default number_of_columns)
+
+             should be between 1 and number_of_columns
+
+        row1 : int
+             row to search in (default 1)
+
+             should be between 1 and number_of_rows
+
+        row2 : int
+             row to return looked up value from (default row1 + 1)
+
+        Returns
+        -------
+        column number where block[row1, column number] == s : int
+
+        Note
+        ----
+        If s is not found, a ValueError is raised
+        """
+        if column_to is None:
+            column_to = self.highest_used_column_number
+        self._check_column(column_from, "column_from")
+        self._check_column(column_to, "column_to")
+        self._check_row(row1, "row1")
+
+        for column in range(column_from, column_to + 1):
+            if self[row1, column] == s:
+                return column
+        raise ValueError(f"{s} not found")
+
+    def lookup(self, s, *, row_from=1, row_to=None, column1=1, column2=None):
+        """
+        searches in column1 for row between row_from and row_to for s and returns the value found at (that row, column2)
+
+        Parameters
+        ----------
+        s : any
+            value to seach for
+
+        row_from : int
+             row to start search (default 1)
+
+             should be between 1 and number_of_rows
+
+        row_to : int
+             row to end search (default number_of_rows)
+
+             should be between 1 and number_of_rows
+
+        column1 : int
+             column to search in (default 1)
+
+             should be between 1 and number_of_columns
+
+        column2 : int
+             column to return looked up value from (default column1 + 1)
+
+             should be between 1 and number_of_columns
+
+        Returns
+        -------
+        block[found row number, column2] : any
+
+        Note
+        ----
+        If s is not found, a ValueError is raised
+
+        This is exactly the same as vlookup.
+        """
+        return self.vlookup(s, row_from=row_from, row_to=row_to, column1=column1, column2=column2)
+
+
+class Capture:
     """
-    empties the captured stdout
-    """
-    _captured_stdout.clear()
-
-
-def captured_stdout_as_str():
-    """
-    returns the captured stdout as a string
-
-    Returns
-    -------
-    captured stdout : list
-        each line is an element of the list
-    """
-
-    return "".join(_captured_stdout)
-
-
-def captured_stdout_as_value():
-    """
-    returns the captured stdout as a list of lists
-
-    Returns
-    -------
-    captured stdout : list
-        each line is an element of the list
-
-    Note
-    ----
-    This can be used directly to fill a xlwings range
-    """
-    return [[line] for line in captured_stdout_as_str().splitlines()]
-
-
-class capture_stdout:
-    """
-    start capture stdout
+    specifies how to capture stdout
 
     Parameters
     ----------
+    enabled : bool
+        if True (default), all stdout output is captured
+        
+        if False, stdout output is printed 
+        
     include_print : bool
-        if True (default), the output is also printed out as normal
+        if False (default), nothing will be printed if enabled is True
 
-        if False, no output is printed
+        if True, output will be printed (and captured if enabled is True)
 
     Note
     ----
-    This function is normally used as a context manager, like ::
+    Use this function, like ::
 
-        with capture_stdout():
+        capture = xwu.Capture():
             ...
     """
 
-    def __init__(self, include_print: bool = True):
-        self.stdout = sys.stdout
-        self.include_print = include_print
+    _instance = None
 
+    def __new__(cls, *args, **kwargs):
+        # singleton
+        if cls._instance is None:
+            cls._instance = super(Capture, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(self, enabled=None, include_print=None):
+        if hasattr(self, "stdout"):
+            if enabled is not None:
+                self.enabled = enabled
+            if include_print is not None:
+                self.include_print = include_print
+            return
+        self.stdout = sys.stdout
+        self._buffer = []
+        self.enabled = True if enabled is None else enabled
+        self.include_print = False if include_print is None else include_print
+
+    def __call__(self, enabled=None, include_print=None):
+        return self.__class__(enabled, include_print)
+    
     def __enter__(self):
-        sys.stdout = self
+        self.enabled = True
 
     def __exit__(self, exc_type, exc_value, tb):
-        sys.stdout = self.stdout
+        self.enabled = False
 
     def write(self, data):
-        _captured_stdout.append(data)
-        if self.include_print:
+        self._buffer.append(data)
+        if self._include_print:
             self.stdout.write(data)
 
     def flush(self):
-        if self.include_print:
+        if self._include_print:
             self.stdout.flush()
-        _captured_stdout.append("\n")
+        self._buffer.append("\n")
+
+    @property
+    def enabled(self):
+        return sys.out == self
+
+    @enabled.setter
+    def enabled(self, value):
+        if value:
+            sys.stdout = self
+        else:
+            sys.stdout = self.stdout
+
+    @property
+    def value(self):
+        result = self.value_keep
+        self.clear()
+        return result
+
+    @property
+    def value_keep(self):
+        result = [[line] for line in self.str_keep.splitlines()]
+        return result
+
+    @property
+    def str(self):
+        result = self.str_keep
+        self._buffer.clear()
+        return result
+
+    @property
+    def str_keep(self):
+        result = "".join(self._buffer)
+        return result
+
+    def clear(self):
+        self._buffer.clear()
+
+    @property
+    def include_print(self):
+        return self._include_print
+
+    @include_print.setter
+    def include_print(self, value):
+        self._include_print = value
 
 
 if __name__ == "__main__":
     ...
+

@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+import io
 
 if __name__ == "__main__":  # to make the tests run without the pytest cli
     file_folder = os.path.dirname(__file__)
@@ -101,28 +102,97 @@ def test_raise():
     with pytest.raises(IndexError):
         this_block[1, 7] = 1
 
+def test_lookup():
+    bl=xwu.block([[1,"One", "Un"],[2, "Two", "Deux"],[3,"Three","Trois"]])
+    assert bl.lookup(1)=="One"
+    assert bl.lookup(3, column2=3)=="Trois"
+    with pytest.raises(ValueError):
+        bl.lookup(4)
+    with pytest.raises(ValueError):
+        bl.lookup(1, column1=4)
+    with pytest.raises(ValueError):
+        bl.lookup(1, column1=3)
+    assert bl.lookup_row(1)==1
+    assert bl.lookup_row(3)==3
 
-def test_capture_stdout(capsys):
-    with xwu.capture_stdout():
-        print("abc")
-        print("def")
-    assert xwu.captured_stdout_as_str() == "abc\ndef\n"
-    assert xwu.captured_stdout_as_value() == [["abc"], ["def"]]
+def test_vookup():
+    bl=xwu.block([[1,"One", "Un"],[2, "Two", "Deux"],[3,"Three","Trois"]])
+    assert bl.vlookup(1)=="One"
+    assert bl.vlookup(3, column2=3)=="Trois"
+    with pytest.raises(ValueError):
+        bl.vlookup(4)
+    with pytest.raises(ValueError):
+        bl.vlookup(1, column1=4)
+    with pytest.raises(ValueError):
+        bl.vlookup(1, column1=3)
 
+def test_hlookup():
+    bl=xwu.block([[1,2,3],"One Two Three".split(), "Un Deux Trois".split()])
+                 
+    assert bl.hlookup(1)=="One"
+    assert bl.hlookup(3, row2=3)=="Trois"
+    with pytest.raises(ValueError):
+        bl.hlookup(4)
+    with pytest.raises(ValueError):
+        bl.hlookup(1, row1=4)
+    with pytest.raises(ValueError):
+        bl.hlookup(1, row1=3)
+    assert bl.lookup_column(1)==1
+    assert bl.lookup_column(3)==3
+
+
+def test_capture(capsys):
+    print("abc")
+    print("def")
     out, err = capsys.readouterr()
     assert out == "abc\ndef\n"
+    assert xwu.capture.str_keep == ""
+    assert xwu.capture.value_keep == []
 
-    xwu.clear_captured_stdout()
-    assert xwu.captured_stdout_as_str() == ""
-    with xwu.capture_stdout(include_print=False):
-        print("ghi")
-        print("jkl")
-    assert xwu.captured_stdout_as_str() == "ghi\njkl\n"
-    assert xwu.captured_stdout_as_value() == [["ghi"], ["jkl"]]
+    with xwu.capture:
+        print("abc")
+        print("def")
     out, err = capsys.readouterr()
     assert out == ""
+    assert xwu.capture.str_keep == "abc\ndef\n"
+    assert xwu.capture.value_keep == [['abc'], ['def']]
+    assert xwu.capture.str == "abc\ndef\n"
+    assert xwu.capture.value == []
+        
+    with xwu.capture:
+        print("abc")
+        print("def")
+    out, err = capsys.readouterr()
+    xwu.capture.clear()
+    assert xwu.capture.str_keep == ""
 
+    with xwu.capture:
+        print("abc")
+        print("def")
+    with xwu.capture:
+        print("ghi")
+        print("jkl")        
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert xwu.capture.str_keep == "abc\ndef\nghi\njkl\n"        
+    assert xwu.capture.value_keep == [['abc'], ['def'], ['ghi'], ['jkl']]
+    assert xwu.capture.value == [['abc'], ['def'], ['ghi'], ['jkl']]    
+    assert xwu.capture.value == []
+    
+    xwu.capture.enabled=True
+    print("abc")
+    print("def")    
+    xwu.capture.enabled=False
+    print("xxx")
+    print("yyy")          
+    xwu.capture.enabled=True
+    print("ghi")
+    print("jkl")        
+    assert xwu.capture.str_keep == "abc\ndef\nghi\njkl\n"      
 
+    
+        # include_print is not testable with pytest
+    
 if __name__ == "__main__":
     pytest.main(["-vv", "-s", "-x", __file__])
 

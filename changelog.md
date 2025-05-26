@@ -1,5 +1,25 @@
 ### changelog | xlwings_utils
 
+[The full documentation can be found here.](https://www.salabim.org/xlwings_utils)
+
+#### version 25.0.1  2025-05-26
+- now uses *calver* versioning
+- complete overhaul of capture_stdout, which is now to be initiated with `capture = xwu.Capture()`
+- block has now methods to lookup values in a block, which is very convenient for project / scenario sheets:
+  - `lookup()` / `vlookup()`
+  - `hlookup()`
+  - `lookup_row()`
+  - `lookup_column()`
+- block now has some additional class methods:
+  - `from_xlrd_sheet()`
+  - `from_openpyxl_sheet()`
+  - `from_dataframe()`
+  -  from_file()
+
+- block now has a method to write to an openpyxl sheet: `to_openpyxl_sheet`
+
+- an application can now check `xwu.xlwings` to see whether it runs in an xlwings environment.
+
 #### version 0.0.7  2025-05-07
 
 - maximum_row is renamed to highest_used_row_number
