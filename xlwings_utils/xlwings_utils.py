@@ -5,7 +5,7 @@
 #  /_/\_\|_|  \_/\_/  |_||_| |_| \__, ||___/ _____  \__,_| \__||_||_||___/
 #                                |___/      |_____|
 
-__version__ = "25.0.1"
+__version__ = "25.0.2"
 
 
 import dropbox
@@ -169,14 +169,19 @@ def read_dropbox(dropbox_path):
     ----
     If REFRESH_TOKEN, APP_KEY and APP_SECRET environment variables are specified,
     it is not necessary to call dropbox_init() prior to any dropbox function.
+    
+    If the filesize does not match the metadata, as sometimes happens on pyodide, an IOError exception will be raised.
     """
 
     _login_dbx()
     metadata, response = dbx.files_download(dropbox_path)
     file_content = response.content
+    if len(file_content) != metadata.size:
+        raise OSError('filesize does not match metadata')
     return file_content
 
 
+    
 def write_dropbox(dropbox_path, contents):
     _login_dbx()
     """

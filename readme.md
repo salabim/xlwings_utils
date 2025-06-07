@@ -39,7 +39,8 @@ The easiest way to use the Dropbox functionality is to add the credentials to th
 Then, it is possible to list all files in a specified folder with the function `list_dropbox`.
 It is also possible to get the folders and to access all underlying folders.
 
-The function `read_dropbox` can be used to read a Dropbox file's contents (bytes).
+The function `read_dropbox` can be used to read a Dropbox file's contents (bytes). If the file is not read correctly, which seems
+to happen rather frequently, an OSError exception is raised.
 
 The function `write_dropbox` can be used to write contents (bytes) to a Dropbox file.
 

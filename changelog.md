@@ -2,6 +2,10 @@
 
 [The full documentation can be found here.](https://www.salabim.org/xlwings_utils)
 
+#### version 25.0.2  2025-06-07
+- sometimes reading from Dropbox with xwu.read_dropbox does not return the right contents.
+  In that case, now an OSError exception is raised. This makes it possible to retry then.
+
 #### version 25.0.1  2025-05-26
 - now uses *calver* versioning
 - complete overhaul of capture_stdout, which is now to be initiated with `capture = xwu.Capture()`
