@@ -2,9 +2,57 @@
 
 [The full documentation can be found here.](https://www.salabim.org/xlwings_utils)
 
+#### version 25.0.8  2025-08-06
+
+  - `block.transpose()` is now called `block.transposed()`
+  - optimised setting None values in a block (now deleted from the dict)
+  - equality test added (based on value)
+  - updated tests
+
+#### version 25.0.7  2025-08-05
+
+  - `block` does not accept a value anymore; use the new`block.from_value()` or use the new -arguably more useful- `block.from_range()`.
+  - `block.value` can't be used to set a value anymore (see above)
+  - `block.encode_files` is now called `block.encode_file` and can encode only one file at a time
+  - the class methods `from_xxx` do not support number_of_rows and number_of_columns parameters anymore; instead use the new `reshape` method 
+  - the repo now contains the file xlwings_utils.bas, which can be used as a module to encode and decode encoded files on a sheet.
+
+#### version 25.0.6  2025-08-01
+
+- #### File transfers via VBA are now done with:
+
+  - `block.encode_files(*files)`
+  * `block.decode_files()`
+  * `trigger_macro()`
+
+- `read_dropbox()` now retries automatically (by default 100 times)
+
+
+#### version 25.0.5  2025-07-21
+
+- added:
+  * `trigger_VBA()`
+  * `init_transfer_files()`
+  * `transfer_file()`
+
+#### version 25.0.4  2025-07-14
+
+- ssl is no longer in the requirements section of pyproject.toml as that caused problems with pip install on regular installations. As a consequence, ssl has to be added to the requirement.txt xlwings lite panel.
+- dropbox_init can now propagate keyword parameters to dropbox.dropbox, to facilitate experimenting.
+
+#### version 25.0.3  2025-06-08
+- updated tests
+- now lookup, hlookup and vlookup have an optional default parameter. If used, default will be returned if
+  the value is not found. Otherwise, a ValueError exception will be raised.
+- now lookup_row and lookup_column have an optional default parameter. If used, default will be returned if
+  the row or columnn cannot be found. Otherwise, a ValueError will be raised.
+- internal change: optional parameters are now handled with missing rather than None.
+- a script to set up dropbox is now available under https://www.salabim.org/dropbox%20setup.py. Also, instructions on how to run that file are added to the readme file.
+
 #### version 25.0.2  2025-06-07
 - sometimes reading from Dropbox with xwu.read_dropbox does not return the right contents.
   In that case, now an OSError exception is raised. This makes it possible to retry then.
+  The message will show both the actual and expected file size.
 
 #### version 25.0.1  2025-05-26
 - now uses *calver* versioning

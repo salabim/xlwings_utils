@@ -5,7 +5,7 @@
 #  /_/\_\|_|  \_/\_/  |_||_| |_| \__, ||___/ _____  \__,_| \__||_||_||___/
 #                                |___/      |_____|
 
-__version__ = "25.0.2"
+__version__ = "25.0.8"
 
 
 import dropbox
@@ -13,16 +13,20 @@ from pathlib import Path
 import os
 import sys
 import math
+import base64
 
 dbx = None
 Pythonista = sys.platform == "ios"
 try:
     import xlwings
-    xlwings = True
-except ImportError:
-    xlwings=False
 
-def dropbox_init(refresh_token=None, app_key=None, app_secret=None):
+except ImportError:
+    xlwings = False
+
+missing = object()
+
+
+def dropbox_init(refresh_token=missing, app_key=missing, app_secret=missing, **kwargs):
     """
     dropbox initialize
 
@@ -66,23 +70,23 @@ def dropbox_init(refresh_token=None, app_key=None, app_secret=None):
                 d = toml.load(f)
                 os.environ.update(d)
 
-    if refresh_token is None:
+    if refresh_token is missing:
         if "REFRESH_TOKEN" in os.environ:
             refresh_token = os.environ["REFRESH_TOKEN"]
         else:
             raise ValueError("no REFRESH_TOKEN found in environment.")
-    if app_key is None:
+    if app_key is missing:
         if "APP_KEY" in os.environ:
             app_key = os.environ["APP_KEY"]
         else:
             raise ValueError("no APP_KEY found in environment.")
-    if app_secret is None:
+    if app_secret is missing:
         if "APP_SECRET" in os.environ:
             app_secret = os.environ["APP_SECRET"]
         else:
             raise ValueError("no APP_SECRET found in environment.")
 
-    dbx = dropbox.Dropbox(oauth2_refresh_token=refresh_token, app_key=app_key, app_secret=app_secret)
+    dbx = dropbox.Dropbox(oauth2_refresh_token=refresh_token, app_key=app_key, app_secret=app_secret, **kwargs)
     try:
         dbx.files_list_folder(path="")  # just to test proper credentials
     except dropbox.exceptions.AuthError:
@@ -150,7 +154,7 @@ def list_dropbox(path="", recursive=False, show_files=True, show_folders=False):
     return out
 
 
-def read_dropbox(dropbox_path):
+def read_dropbox(dropbox_path, max_retries=100):
     """
     read_dropbox
 
@@ -161,6 +165,9 @@ def read_dropbox(dropbox_path):
     dropbox_path : str or Pathlib.Path
         path to read from
 
+    max_retries : int
+        number of retries (default: 100)
+
     Returns
     -------
     contents of the dropbox file : bytes
@@ -169,26 +176,26 @@ def read_dropbox(dropbox_path):
     ----
     If REFRESH_TOKEN, APP_KEY and APP_SECRET environment variables are specified,
     it is not necessary to call dropbox_init() prior to any dropbox function.
-    
-    If the filesize does not match the metadata, as sometimes happens on pyodide, an IOError exception will be raised.
+
+    As reading from dropbox is very unreliable under pyodide, reading will have to be retried (by default maximum 100 times).
+    The number of retries can be found with read_dropbox.retries.
     """
 
     _login_dbx()
-    metadata, response = dbx.files_download(dropbox_path)
-    file_content = response.content
-    if len(file_content) != metadata.size:
-        raise OSError('filesize does not match metadata')
-    return file_content
+    for read_dropbox.retries in range(max_retries + 1):
+        metadata, response = dbx.files_download(dropbox_path)
+        file_content = response.content
+        if len(file_content) == metadata.size:
+            return file_content
+    raise OSError(f"after {max_retries} still no valid response")
 
 
-    
 def write_dropbox(dropbox_path, contents):
-    _login_dbx()
     """
     write_dropbox
-    
+
     write from dopbox at given path
-    
+
     Parameters
     ----------
     dropbox_path : str or Pathlib.Path
@@ -196,12 +203,13 @@ def write_dropbox(dropbox_path, contents):
 
     contents : bytes
         contents to be written
-        
+
     Note
     ----
     If REFRESH_TOKEN, APP_KEY and APP_SECRET environment variables are specified,
     it is not necessary to call dropbox_init() prior to any dropbox function.
     """
+    _login_dbx()
     dbx.files_upload(contents, dropbox_path, mode=dropbox.files.WriteMode.overwrite)
 
 
@@ -267,83 +275,192 @@ class block:
     Parameters
     ----------
     number_of_rows : int
-        number of rows
+        number of rows (dedault 1)
 
     number_of_columns : int
-        number of columns
+        number of columns (default 1)
 
     Returns
     -------
     block
     """
 
-    def __init__(self, value=None, *, number_of_rows=None, number_of_columns=None, column_like=False):
+    def __init__(self, number_of_rows=1, number_of_columns=1):
         self.dict = {}
-        self.column_like = column_like
-        if value is None:
-            if number_of_rows is None:
-                number_of_rows = 1
-            if number_of_columns is None:
-                number_of_columns = 1
-            self.number_of_rows = number_of_rows
-            self.number_of_columns = number_of_columns
+        self.number_of_rows = number_of_rows
+        self.number_of_columns = number_of_columns
 
-        else:
-            if isinstance(value, block):
-                value = value.value
-            self.value = value
-            if number_of_rows is not None:
-                self.number_of_rows = number_of_rows
-            if number_of_columns is not None:
-                self.number_of_columns = number_of_columns
+    def __eq__(self, other):
+        if isinstance(other, block):
+            return self.value == other.value
+        return False
 
     @classmethod
-    def from_xlrd_sheet(cls, sheet, number_of_rows=None, number_of_columns=None):
-        v = [sheet.row_values(row_idx)[0 : sheet.ncols] for row_idx in range(0, sheet.nrows)]
-        return cls(v, number_of_rows=number_of_rows, number_of_columns=number_of_columns)
+    def from_value(cls, value, column_like=False):
+        """
+        makes a block from a given value
 
-    @classmethod
-    def from_openpyxl_sheet(cls, sheet, number_of_rows=None, number_of_columns=None):
-        v = [[cell.value for cell in row] for row in sheet.iter_rows()]
-        return cls(v, number_of_rows=number_of_rows, number_of_columns=number_of_columns)
+        Parameters
+        ----------
+        value : scalar, list of scalars, list of lists of scalars or block
+            value to be used in block, possibly expanded to a list of lists of scalars
 
-    @classmethod
-    def from_file(cls, filename, number_of_rows=None, number_of_columns=None):
-        with open(filename, "r") as f:
-            v = [[line if line else None] for line in f.read().splitlines()]
-        return cls(v, number_of_rows=number_of_rows, number_of_columns=number_of_columns)
+        column_like : boolean
+            if value is a list of scalars, values is interpreted as a column if True, as a row otherwise
 
-    @classmethod
-    def from_dataframe(cls, df, number_of_rows=None, number_of_columns=None):
-        v = df.values.tolist()
-        return cls(v, number_of_rows=number_of_rows, number_of_columns=number_of_columns)
-
-    def to_openpyxl_sheet(self, sheet):
-        for row in self.value:
-            sheet.append(row)
-
-    @property
-    def value(self):
-        return [[self.dict.get((row, column)) for column in range(1, self.number_of_columns + 1)] for row in range(1, self.number_of_rows + 1)]
-
-    @value.setter
-    def value(self, value):
+        Returns
+        -------
+        block : block
+        """
+        if isinstance(value, block):
+            value = value.value
         if not isinstance(value, list):
             value = [[value]]
         if not isinstance(value[0], list):
-            if self.column_like:
+            if column_like:
                 value = [[item] for item in value]
             else:
                 value = [value]
-
-        self.number_of_rows = len(value)
-        self._number_of_columns = 0
+        bl = cls(len(value), 1)
 
         for row, row_contents in enumerate(value, 1):
             for column, item in enumerate(row_contents, 1):
                 if item and not (isinstance(item, float) and math.isnan(item)):
-                    self.dict[row, column] = item
-                    self._number_of_columns = max(self.number_of_columns, column)
+                    bl.dict[row, column] = item
+                bl._number_of_columns = max(bl.number_of_columns, column)
+        return bl
+
+    @classmethod
+    def from_range(cls, rng):
+        """
+        makes a block from a given range
+
+        Parameters
+        ----------
+        rng : xlwings.Range
+            range to be used be used in block
+
+        Returns
+        -------
+        block : block
+        """
+        number_of_rows, number_of_columns = rng.shape
+        return cls.from_value(rng.value, column_like=(number_of_columns == 1))
+
+    @classmethod
+    def from_xlrd_sheet(cls, sheet):
+        """
+        makes a block from a xlrd sheet
+
+        Parameters
+        ----------
+        sheet : xlrd sheet
+            sheet to be used be used in block
+
+        Returns
+        -------
+        block : block
+        """
+        v = [sheet.row_values(row_idx)[0 : sheet.ncols] for row_idx in range(0, sheet.nrows)]
+        return cls.from_value(v)
+
+    @classmethod
+    def from_openpyxl_sheet(cls, sheet):
+        """
+        makes a block from an openpyxl sheet
+
+        Parameters
+        ----------
+        sheet : xlrd sheet
+            sheet to be used be used in block
+
+        Returns
+        -------
+        block : block
+        """
+        v = [[cell.value for cell in row] for row in sheet.iter_rows()]
+        return cls.from_value(v)
+
+    @classmethod
+    def from_file(cls, filename):
+        """
+        makes a block from a file
+
+        Parameters
+        ----------
+        filename : str
+            file to be used be used in block
+
+        Returns
+        -------
+        block : block
+        """
+        with open(filename, "r") as f:
+            v = [[line if line else missing] for line in f.read().splitlines()]
+        return cls.from_value(v)
+
+    @classmethod
+    def from_dataframe(cls, df):
+        """
+        makes a block from a given dataframe
+
+        Parameters
+        ----------
+        df : pandas dataframe
+            dataframe to be used be used in block
+
+        Returns
+        -------
+        block : block
+        """
+        v = df.values.tolist()
+        return cls.from_value(v)
+
+    def to_openpyxl_sheet(self, sheet):
+        """
+        appends a block to a given openpyxl sheet
+
+        Parameters
+        ----------
+        sheet: openpyxl sheet
+            sheet to be used be used
+
+        Returns
+        -------
+        block : block
+        """
+        for row in self.value:
+            sheet.append(row)
+
+    def reshape(self, number_of_rows=missing, number_of_columns=missing):
+        """
+        makes a new block with given dimensions
+
+        Parameters
+        ----------
+        number_of_rows : int
+            if given, expand or shrink to the given number of rows
+
+        number_of_columns : int
+            if given, expand or shrink to the given number of columns
+
+        Returns
+        -------
+        block : block
+        """
+        if number_of_rows is missing:
+            number_of_rows = self.number_of_rows
+        if number_of_columns is missing:
+            number_of_columns = self.number_of_columns
+        bl = block(number_of_rows=number_of_rows, number_of_columns=number_of_columns)
+        for (row, column), value in self.dict.items():
+            if row <= number_of_rows and column <= number_of_columns:
+                bl[row, column] = value
+        return bl
+
+    @property
+    def value(self):
+        return [[self.dict.get((row, column)) for column in range(1, self.number_of_columns + 1)] for row in range(1, self.number_of_rows + 1)]
 
     def __setitem__(self, row_column, value):
         row, column = row_column
@@ -351,7 +468,11 @@ class block:
             raise IndexError(f"row must be between 1 and {self.number_of_rows} not {row}")
         if column < 1 or column > self.number_of_columns:
             raise IndexError(f"column must be between 1 and {self.number_of_columns} not {column}")
-        self.dict[row, column] = value
+        if value is None:
+            if (row, column) in self.dict:
+                del self.dict[row, column]
+        else:
+            self.dict[row, column] = value
 
     def __getitem__(self, row_column):
         row, column = row_column
@@ -368,7 +489,7 @@ class block:
         minimized block : block
              uses highest_used_row_number and highest_used_column_number to minimize the block
         """
-        return block(self, number_of_rows=self.highest_used_row_number, number_of_columns=self.highest_used_column_number)
+        return self.reshape(number_of_rows=self.highest_used_row_number, number_of_columns=self.highest_used_column_number)
 
     @property
     def number_of_rows(self):
@@ -425,7 +546,20 @@ class block:
         if column > self.number_of_columns:
             raise ValueError(f"{name}={column} > number_of_columns={self.number_of_columns}")
 
-    def vlookup(self, s, *, row_from=1, row_to=None, column1=1, column2=None):
+    def transposed(self):
+        """
+        transpose block
+
+        Returns
+        -------
+        transposed block : block
+        """
+        bl = block(number_of_rows=self.number_of_columns, number_of_columns=self.number_of_rows)
+        for (row, column), value in self.dict.items():
+            bl[column, row] = value
+        return bl
+
+    def vlookup(self, s, *, row_from=1, row_to=missing, column1=1, column2=missing, default=missing):
         """
         searches in column1 for row between row_from and row_to for s and returns the value found at (that row, column2)
 
@@ -454,21 +588,28 @@ class block:
 
              should be between 1 and number_of_columns
 
+        default : any
+             if s is not found, returns the default.
+
+             if omitted, a ValueError exception will be raised in that case
+
         Returns
         -------
         block[found row number, column2] : any
-
-        Note
-        ----
-        If s is not found, a ValueError is raised
         """
-        if column2 is None:
+        if column2 is missing:
             column2 = column1 + 1
         self._check_column(column2, "column2")
-        row = self.lookup_row(s, row_from=row_from, row_to=row_to, column1=column1)
-        return self[row, column2]
+        row = self.lookup_row(s, row_from=row_from, row_to=row_to, column1=column1, default=-1)
+        if row == -1:
+            if default is missing:
+                raise ValueError(f"{s} not found]")
+            else:
+                return default
+        else:
+            return self[row, column2]
 
-    def lookup_row(self, s, *, row_from=1, row_to=None, column1=1):
+    def lookup_row(self, s, *, row_from=1, row_to=missing, column1=1, default=missing):
         """
         searches in column1 for row between row_from and row_to for s and returns that row number
 
@@ -495,15 +636,22 @@ class block:
         column2 : int
              column to return looked up value from (default column1 + 1)
 
+        default : any
+             if s is not found, returns the default.
+
+             if omitted, a ValueError exception will be raised
+
+        default : any
+             if s is not found, returns the default.
+
+             if omitted, a ValueError exception will be raised in that case
+
+
         Returns
         -------
         row number where block[row nunber, column1] == s : int
-
-        Note
-        ----
-        If s is not found, a ValueError is raised
         """
-        if row_to is None:
+        if row_to is missing:
             row_to = self.highest_used_row_number
         self._check_row(row_from, "row_from")
         self._check_row(row_to, "row_to")
@@ -512,9 +660,12 @@ class block:
         for row in range(row_from, row_to + 1):
             if self[row, column1] == s:
                 return row
-        raise ValueError(f"{s} not found")
+        if default is missing:
+            raise ValueError(f"{s} not found")
+        else:
+            return default
 
-    def hlookup(self, s, *, column_from=1, column_to=None, row1=1, row2=None):
+    def hlookup(self, s, *, column_from=1, column_to=missing, row1=1, row2=missing, default=missing):
         """
         searches in row1 for column between column_from and column_to for s and returns the value found at (that column, row2)
 
@@ -543,21 +694,28 @@ class block:
 
              should be between 1 and number_of_rows
 
+        default : any
+             if s is not found, returns the default.
+
+             if omitted, a ValueError exception will be raised in that case
+
         Returns
         -------
         block[row, found column, row2] : any
-
-        Note
-        ----
-        If s is not found, a ValueError is raised
         """
-        if row2 is None:
+        if row2 is missing:
             row2 = row1 + 1
         self._check_row(row2, "row2")
-        column = self.lookup_column(s, column_from=column_from, column_to=column_to, row1=row1)
-        return self[row2, column]
+        column = self.lookup_column(s, column_from=column_from, column_to=column_to, row1=row1, default=-1)
+        if column == -1:
+            if default is missing:
+                raise ValueError(f"{s} not found")
+            else:
+                return default
+        else:
+            return self[row2, column]
 
-    def lookup_column(self, s, *, column_from=1, column_to=None, row1=1):
+    def lookup_column(self, s, *, column_from=1, column_to=missing, row1=1, default=missing):
         """
         searches in row1 for column between column_from and column_to for s and returns that column number
 
@@ -584,15 +742,16 @@ class block:
         row2 : int
              row to return looked up value from (default row1 + 1)
 
+        default : any
+             if s is not found, returns the default.
+
+             if omitted, a ValueError exception will be raised in that case
+
         Returns
         -------
         column number where block[row1, column number] == s : int
-
-        Note
-        ----
-        If s is not found, a ValueError is raised
         """
-        if column_to is None:
+        if column_to is missing:
             column_to = self.highest_used_column_number
         self._check_column(column_from, "column_from")
         self._check_column(column_to, "column_to")
@@ -601,9 +760,12 @@ class block:
         for column in range(column_from, column_to + 1):
             if self[row1, column] == s:
                 return column
-        raise ValueError(f"{s} not found")
+        if default is missing:
+            raise ValueError(f"{s} not found")
+        else:
+            return default
 
-    def lookup(self, s, *, row_from=1, row_to=None, column1=1, column2=None):
+    def lookup(self, s, *, row_from=1, row_to=missing, column1=1, column2=missing, default=missing):
         """
         searches in column1 for row between row_from and row_to for s and returns the value found at (that row, column2)
 
@@ -632,17 +794,83 @@ class block:
 
              should be between 1 and number_of_columns
 
+        default : any
+             if s is not found, returns the default.
+
+             if omitted, a ValueError exception will be raised in that case
+
         Returns
         -------
         block[found row number, column2] : any
 
         Note
         ----
-        If s is not found, a ValueError is raised
-
         This is exactly the same as vlookup.
         """
-        return self.vlookup(s, row_from=row_from, row_to=row_to, column1=column1, column2=column2)
+        return self.vlookup(s, row_from=row_from, row_to=row_to, column1=column1, column2=column2, default=default)
+
+    def decode_to_files(self):
+        """
+        decode the block with encoded file(s) to individual pyoidide file(s)
+
+        Returns
+        -------
+        count : int
+            number of files decoded
+
+        Note
+        ----
+        if the block does not contain an encode file, the method just returns 0
+        """
+        count = 0
+        for column in range(1, self.number_of_columns + 1):
+            row = 1
+            bl = self.minimized()
+            while row <= self.number_of_rows:
+                if self[row, column] and self[row, column].startswith("<file=") and self[row, column].endswith(">"):
+                    filename = self[row, column][6:-1]
+                    collect = []
+                    row += 1
+                    while bl[row, column] != "</file>":
+                        if bl[row, column]:
+                            collect.append(bl[row, column])
+                        row += 1
+                    decoded = base64.b64decode("".join(collect))
+                    open(filename, "wb").write(decoded)
+                    count += 1
+                row += 1
+        return count
+
+    @classmethod
+    def encode_file(cls, file):
+        """
+        make a block with the given pyodide file encoded
+
+        Parameters
+        ----------
+        file : file name (str)
+            file to be encoded
+
+        Returns
+        -------
+        block with encoded file : block (minimized)
+        """
+
+        bl = cls(number_of_rows=100000, number_of_columns=1)
+
+        n = 5000  # block size
+        row = 1
+        bl[row, 1] = f"<file={file}>"
+        row += 1
+        b64 = base64.b64encode(open(file, "rb").read()).decode("utf-8")
+        while b64:
+            b64_n = b64[:n]
+            bl[row, 1] = b64_n
+            row += 1
+            b64 = b64[n:]
+        bl[row, 1] = f"</file>"
+        row += 1
+        return bl.minimized()
 
 
 class Capture:
@@ -653,9 +881,9 @@ class Capture:
     ----------
     enabled : bool
         if True (default), all stdout output is captured
-        
-        if False, stdout output is printed 
-        
+
+        if False, stdout output is printed
+
     include_print : bool
         if False (default), nothing will be printed if enabled is True
 
@@ -663,10 +891,9 @@ class Capture:
 
     Note
     ----
-    Use this function, like ::
+    Use this like ::
 
-        capture = xwu.Capture():
-            ...
+        capture = xwu.Capture()
     """
 
     _instance = None
@@ -677,21 +904,21 @@ class Capture:
             cls._instance = super(Capture, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self, enabled=None, include_print=None):
+    def __init__(self, enabled=missing, include_print=missing):
         if hasattr(self, "stdout"):
-            if enabled is not None:
+            if enabled is not missing:
                 self.enabled = enabled
-            if include_print is not None:
+            if include_print is not missing:
                 self.include_print = include_print
             return
         self.stdout = sys.stdout
         self._buffer = []
-        self.enabled = True if enabled is None else enabled
-        self.include_print = False if include_print is None else include_print
+        self.enabled = True if enabled is missing else enabled
+        self.include_print = False if include_print is missing else include_print
 
-    def __call__(self, enabled=None, include_print=None):
+    def __call__(self, enabled=missing, include_print=missing):
         return self.__class__(enabled, include_print)
-    
+
     def __enter__(self):
         self.enabled = True
 
@@ -753,6 +980,19 @@ class Capture:
         self._include_print = value
 
 
+def trigger_macro(sheet):
+    """
+    triggers the macro on sheet
+
+    Parameters
+    ----------
+    sheet : sheet
+        sheet to use
+
+    """
+
+    sheet["A1"].value = "=NOW()"
+
+
 if __name__ == "__main__":
     ...
-

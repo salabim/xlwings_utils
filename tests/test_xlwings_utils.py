@@ -42,7 +42,7 @@ def test_block0():
 
 
 def test_block1():
-    this_block = xwu.block([[1, 2, 3], [4, 5, 6]])
+    this_block = xwu.block.from_value([[1, 2, 3], [4, 5, 6]])
     assert this_block.dict == {(1, 1): 1, (1, 2): 2, (1, 3): 3, (2, 1): 4, (2, 2): 5, (2, 3): 6}
     assert this_block.value == [[1, 2, 3], [4, 5, 6]]
     assert this_block.minimized().value == [[1, 2, 3], [4, 5, 6]]
@@ -57,29 +57,42 @@ def test_block1():
 
 
 def test_block2():
-    this_block = xwu.block([[1, 2, 3], [4, 5, 6]], number_of_rows=1)
+    this_block = xwu.block.from_value([[1, 2, 3], [4, 5, 6]]).reshape(number_of_rows=1)
     assert this_block.value == [[1, 2, 3]]
 
-    this_block = xwu.block([[1, 2, 3], [4, 5, 6]], number_of_rows=1, number_of_columns=2)
+    this_block = xwu.block.from_value([[1, 2, 3], [4, 5, 6]]).reshape(number_of_rows=1, number_of_columns=2)
     assert this_block.value == [[1, 2]]
 
-    this_block = xwu.block([[1, 2, 3], [4, 5, 6]], number_of_rows=3, number_of_columns=4)
+    this_block = xwu.block.from_value([[1, 2, 3], [4, 5, 6]]).reshape(number_of_rows=3, number_of_columns=4)
     assert this_block.value == [[1, 2, 3, None], [4, 5, 6, None], [None, None, None, None]]
 
 
 def test_block_one_dimension():
-    this_block = xwu.block([1, 2, 3])
+    this_block = xwu.block.from_value([1, 2, 3])
     assert this_block.value == [[1, 2, 3]]
 
-    this_block = xwu.block([1, 2, 3], column_like=True)
+    this_block = xwu.block.from_value([1, 2, 3], column_like=True)
     assert this_block.value == [[1], [2], [3]]
 
 
 def test_block_scalar():
-    this_block = xwu.block(1)
+    this_block = xwu.block.from_value(1)
     assert this_block.value == [[1]]
 
+def test_transpose():
+    this_block = xwu.block.from_value([[1, 2, 3], [4, 5, 6]])
+    transposed_block=this_block.transposed()
+    assert transposed_block.value==[[1,4],[2,5],[3,6]]
 
+def test_delete_none():
+    this_block = xwu.block.from_value([[1, 2, None], [4, 5, None]])
+    assert len(this_block.dict)==4
+    this_block[1,1]=None
+    assert len(this_block.dict)==3    
+    this_block[1,1]=None
+    assert len(this_block.dict)==3 
+    assert this_block.value==[[None, 2, None], [4, 5, None]]
+    
 def test_raise():
     this_block = xwu.block(number_of_rows=4, number_of_columns=6)
     with pytest.raises(IndexError):
@@ -103,11 +116,12 @@ def test_raise():
         this_block[1, 7] = 1
 
 def test_lookup():
-    bl=xwu.block([[1,"One", "Un"],[2, "Two", "Deux"],[3,"Three","Trois"]])
+    bl=xwu.block.from_value([[1,"One", "Un"],[2, "Two", "Deux"],[3,"Three","Trois"]])
     assert bl.lookup(1)=="One"
     assert bl.lookup(3, column2=3)=="Trois"
     with pytest.raises(ValueError):
         bl.lookup(4)
+    assert bl.lookup(4,default='x')=='x'        
     with pytest.raises(ValueError):
         bl.lookup(1, column1=4)
     with pytest.raises(ValueError):
@@ -116,23 +130,25 @@ def test_lookup():
     assert bl.lookup_row(3)==3
 
 def test_vookup():
-    bl=xwu.block([[1,"One", "Un"],[2, "Two", "Deux"],[3,"Three","Trois"]])
+    bl=xwu.block.from_value([[1,"One", "Un"],[2, "Two", "Deux"],[3,"Three","Trois"]])
     assert bl.vlookup(1)=="One"
     assert bl.vlookup(3, column2=3)=="Trois"
     with pytest.raises(ValueError):
         bl.vlookup(4)
+    assert bl.vlookup(4, default='x')=='x'
     with pytest.raises(ValueError):
         bl.vlookup(1, column1=4)
     with pytest.raises(ValueError):
         bl.vlookup(1, column1=3)
 
 def test_hlookup():
-    bl=xwu.block([[1,2,3],"One Two Three".split(), "Un Deux Trois".split()])
+    bl=xwu.block.from_value([[1,2,3],"One Two Three".split(), "Un Deux Trois".split()])
                  
     assert bl.hlookup(1)=="One"
     assert bl.hlookup(3, row2=3)=="Trois"
     with pytest.raises(ValueError):
         bl.hlookup(4)
+    assert bl.hlookup(4,default='x')=='x'
     with pytest.raises(ValueError):
         bl.hlookup(1, row1=4)
     with pytest.raises(ValueError):
@@ -144,51 +160,52 @@ def test_hlookup():
 def test_capture(capsys):
     print("abc")
     print("def")
+    capture=xwu.Capture()
     out, err = capsys.readouterr()
     assert out == "abc\ndef\n"
-    assert xwu.capture.str_keep == ""
-    assert xwu.capture.value_keep == []
+    assert capture.str_keep == ""
+    assert capture.value_keep == []
 
-    with xwu.capture:
+    with capture:
         print("abc")
         print("def")
     out, err = capsys.readouterr()
     assert out == ""
-    assert xwu.capture.str_keep == "abc\ndef\n"
-    assert xwu.capture.value_keep == [['abc'], ['def']]
-    assert xwu.capture.str == "abc\ndef\n"
-    assert xwu.capture.value == []
+    assert capture.str_keep == "abc\ndef\n"
+    assert capture.value_keep == [['abc'], ['def']]
+    assert capture.str == "abc\ndef\n"
+    assert capture.value == []
         
-    with xwu.capture:
+    with capture:
         print("abc")
         print("def")
     out, err = capsys.readouterr()
-    xwu.capture.clear()
-    assert xwu.capture.str_keep == ""
+    capture.clear()
+    assert capture.str_keep == ""
 
-    with xwu.capture:
+    with capture:
         print("abc")
         print("def")
-    with xwu.capture:
+    with capture:
         print("ghi")
         print("jkl")        
     out, err = capsys.readouterr()
     assert out == ""
-    assert xwu.capture.str_keep == "abc\ndef\nghi\njkl\n"        
-    assert xwu.capture.value_keep == [['abc'], ['def'], ['ghi'], ['jkl']]
-    assert xwu.capture.value == [['abc'], ['def'], ['ghi'], ['jkl']]    
-    assert xwu.capture.value == []
+    assert capture.str_keep == "abc\ndef\nghi\njkl\n"        
+    assert capture.value_keep == [['abc'], ['def'], ['ghi'], ['jkl']]
+    assert capture.value == [['abc'], ['def'], ['ghi'], ['jkl']]    
+    assert capture.value == []
     
-    xwu.capture.enabled=True
+    capture.enabled=True
     print("abc")
     print("def")    
-    xwu.capture.enabled=False
+    capture.enabled=False
     print("xxx")
     print("yyy")          
-    xwu.capture.enabled=True
+    capture.enabled=True
     print("ghi")
     print("jkl")        
-    assert xwu.capture.str_keep == "abc\ndef\nghi\njkl\n"      
+    assert capture.str_keep == "abc\ndef\nghi\njkl\n"      
 
     
         # include_print is not testable with pytest

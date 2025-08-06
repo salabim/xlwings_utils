@@ -6,11 +6,15 @@ This module provides some useful functions to be used in xlwings (lite).
 
 ## Installation
 
-Just add xlwings-utils to the *requirements.txt* tab. 
+Just add `xlwings-utils` and `ssl` (even if `dropbox` is not used) to the *requirements.txt* tab. 
 
 In the script, add
 
 ```ìmport xlwings_utils as xwu```
+
+For *regular* installations, use
+
+```pip install xlwings_utils```
 
 > [!NOTE]
 >
@@ -32,15 +36,20 @@ If an application runs under xlwings, `xwu.xlwings` will be True. False, if not.
 
 The xlwings lite system does not provide access to the local file system. With this module, files can be copied between Dropbox and the local pyodide file system, making it possible to indirectly use the local file system.
 
-It is only possible, as of now, to use full-access Dropbox apps.
+Currently, it is only possible to use full-access Dropbox apps.
 
-The easiest way to use the Dropbox functionality is to add the credentials to the environment variables. Add REFRESH_TOKEN, APP_KEY and APP_SECRET with their corresponding values to the environment variables.
+The easiest way to use the Dropbox functionality is to add the credentials to the environment variables. Add REFRESH_TOKEN, APP_KEY and APP_SECRET with their corresponding values to the environment variables. Instructions on how to get these variables can be found here.
 
-Then, it is possible to list all files in a specified folder with the function `list_dropbox`.
+In order to make a Dropbox app, and get the required environment variables, just execute this line from the command line (shell).
+
+```
+python -c "exec(__import__('requests').get('https://salabim.org/dropbox setup.py').text)"
+```
+
+Then, it is possible to list all files in a specified folder using the list_dropbox function.
 It is also possible to get the folders and to access all underlying folders.
 
-The function `read_dropbox` can be used to read a Dropbox file's contents (bytes). If the file is not read correctly, which seems
-to happen rather frequently, an OSError exception is raised.
+The `read_dropbox` function can be used to read the contents (bytes) of a Dropbox file. As reading from Dropbox under pyodide is rather unreliable, xlwings_utils automatically retries several times (by default 100 times). The actual number of retries can be found with `read_dropbox.retries`.
 
 The function `write_dropbox` can be used to write contents (bytes) to a Dropbox file.
 
@@ -63,16 +72,22 @@ xwu.write_dropbox('/downloads/file1.gif')
 ## Block support
 
 The module contains a useful 2-dimensional data structure: *block*.
-This can be useful to manipulate a range without accessing the range directly, which is expensive in terms of memory and execution time.
+This can be useful for manipulating a range without accessing it directly, which is expensive in terms of memory and execution time.
 The advantage over an ordinary list of lists is that a block is index one-based, in line with range and addressing is done with a row, column tuple.
-So, `my_block(lol)[row, col]` is roughly equivalent to `lol[row-1][col-1]`
+So, `my_block[row, col]` is roughly equivalent to `lol[row-1][col-1]`
 
 A block stores the values internally as a dictionary and will only convert these to a list of lists when using `block.value`. 
 
-Converting the value of a range (usually a list of lists, but can also be a list or scalar) to a block can be done with
+Converting of a range to a block can be done like
 
 ```
-my_block = xwu.block.from_value(range.value)
+rng = book.sheets.active.range((5,7),(8,100))
+my_block = xwu.block.from_range(rng
+```
+
+A value of a range (list of lists, list of scalars or scalar can be converted to a block with
+```
+my_block = xwu.block.from_value(rng.value)
 ```
 The dimensions (number of rows and number of columns) are automatically set.
 
@@ -84,7 +99,7 @@ And, likewise, reading an individual item can be done like
 ```
 x = my_block[row, column]
 ```
-It is not allowed t,o read or write outside the block dimensions.
+It is not allowed to read or write outside the block dimensions.
 
 It is also possible to define an empty block, like
 ```
@@ -93,9 +108,10 @@ block = xwu.block(number_of_rows, number_columns)
 The dimensions can be queried or redefined with `block.number_of_rows` and 
 `block.number_of_columns`.
 
-To assign a block to range, use
+It is also possible to get a copy of a block with different dimensions:
+
 ```
-range.value = block.value
+bl = my.block.reshape(number_of_rows=2, number_of_columns=10)
 ```
 
 The property `block.highest_used_row_number` returns the row number of the highest non-None cell.
@@ -113,7 +129,7 @@ for row in range(1, 10001):
 	this_block[row,2]= ...
 	if ...: # end condition
 	    break
-sheet.range(10,1).value = this_block.minimized().value
+sheet.range((10,1)).value = this_block.minimized().value
 ```
 
 In this case, only the really processed rows are copied to the sheet.
@@ -125,9 +141,13 @@ With blocks, it is easy to use a sheet as an input for a project / scenario.
 Something like
  <img src="https://www.salabim.org/xlwings_utils/fig01.png">  
 
-Of course, we could access the various input fields with absolute ranges, but if something changes later (like adding a row), all references would have to be updated.
+Of course, we could access the various input fields with absolute ranges, but if something changes later (such as adding a row), all references would need to be updated.
 
-If we read the project sheet (partly) into a block, lookup methods are available to access 'fields' easily and future-proof.
+If we read the project sheet (partly) into a block, lookup methods are available to access *fields* easily and future-proof:
+
+```
+bl = xwu.block.from_range(sheet.range(1,1),(100,10)))
+```
 
 Let's see how this works with the above sheet. The corresponding block (bl) looks like
 
@@ -145,7 +165,8 @@ Let's see how this works with the above sheet. The corresponding block (bl) look
 9 | 
 ```
 Now we can do
-```project  = bl.lookup("Project")
+```
+project  = bl.lookup("Project")
 project = bl.lookup("Project")
 start_date = bl.lookup("Start date")
 end_date = bl.lookup("End date")
@@ -161,28 +182,26 @@ for row2 in range(row1 + 1, bl.highest_used_row_number + 1):
     weight = bl.hlookup("Weight",row1=row1, row2=row2)         
     parts.append(Part(part_name, width, length, height, weight))
 ```
-First we do a couple of `lookup`s, which are vertical lookups, to scan column 1 for the given labels and return the corresponding values from column 2.
+First, we perform a couple of vertical lookups to scan column 1 for the given labels and return the corresponding values from column 2.
 
 Then, there's `lookup_row`, which also scans column1 for the given label (Parts), but returns the corresponding row (5). It is then stored in row1.
-And then we just read the following rows (with `hlookup`) and access the required values.
+We then read the following rows (using hlookups) and access the required values.
 
 ### Filling a block from other sources
 
-The advantage of using a block instead of accessing these sources is, that they are one-based, just like in Excel.
+The advantage of using a block instead of accessing these sources directly is that they are one-based, just like in Excel.
 
-It is possible to make a block from a xlrd worksheet with `block.from_xlrd_sheet`. 
+It is possible to make a block from an xlrd worksheet with `block.from_xlrd_sheet`. 
 
-It is possible to make a block from a pandas dataframe with `block.from_dataframe`. Make sure that, if the dataframe is created by reading from an Excel sheet, headers=None should be specified, e.g. `df = pd.read_excel(filename, header=None)`.
+It is possible to create a block from a panda dataFrame using `block.from_dataframe`. Ensure that, if the dataframe is created by reading from an Excel sheet, headers=None is specified, e.g., `df = pd.read_excel(filename, header=None)`.
 
 It is possible to make a block from an openpyxl worksheet with `block.from_openpyxl_sheet`. 
-
-### Writing a block to an openpyxl sheet
-
-In order to write (append) to an openpyxl sheet, use: block.to_openpyxl_sheet.
 
 It is possible to make a block from a text file with `block.from_file`. 
 
 ### Writing a block to an openpyxl sheet
+
+In order to write (append) to an openpyxl sheet, use: block.to_openpyxl_sheet.
 
 ## Capture stdout support
 
@@ -210,9 +229,9 @@ capture = xwu.Capture(include_print=True)
 
 the stdout output is captured and printed.
 
-Capturing van be enabled and disabled at any time with `capture.enbaled = True` and `capture.enabled = False`.
+Capturing can be enabled and disabled at any time with `capture.enabled = True` and `capture.enabled = False`.
 
-And including print likewise with `capture.include_print`.
+And include print, likewise, with `capture.include_print`.
 
 Alternatively, a context manager is provided:
 
@@ -225,7 +244,7 @@ with capture:
 ```
 Note that stopping the capture, leaves the captured output in place, so it can be extended later.
 
-In either case, the captured output can be then copied to a sheet, like
+In either case, the captured output can then be copied to a sheet, like
 
 ```
 sheet.range(4,5).value = capture.value
@@ -238,10 +257,61 @@ The capture buffer can also be retrieved as a string with `capture.str` and `cap
 
 Clearing the captured stdout buffer can be done at any time with `capture.clear()`.
 
+## Functionality for accessing local files via VBA
+
+Currently, *xlwings Lite* does not provide access to the local file system. Therefore, xlwings_utils offers some functionality to trigger a VBA script as well as functionality to encode a file in the pyodide file system to a VBA sheet and to trigger writing the encoded file(s) to the local file system.
+
+Files can be encoded into a block, like:
+
+```
+    bl = xwu.block.encode_file("film1.mp4")
+    book.sheets["VBA"].range((10,1)).value=bl.value
+```
+
+With this code, column A will be filled with an encoded copy of the files *film1.mp4* . This can then be used with a suitable VBA macro to decode to the real file system. A VBA macro can be triggered with `xwu.trigger_macro()`. This requires an Excel worksheet where cell A1 is reserved for communication with xlwings lite. This worksheet needs to contain a macro, like
+
+```
+Private Sub Worksheet_Calculate()
+    If Me.Range("A1").Formula = "=NOW()" Then
+        Me.Range("A1").Value = Null
+        Call MacroToExecute
+    End If
+End Sub
+```
+
+, where `MacroToExecute` should contain the user code, most likely code to decode file(s) encoded.
+
+The repo contains a VBA module called xlwings_utils.bas with code to decode encoded files.
+Just add the .bas file to a worksheet and call like
+
+```
+Sub MacroToExecute()
+    DecodeFile(Me, 10, 1)
+```
+
+In this example, the file *film1.mp4* will be downloaded into the current directory.
+
+The module xlwings_utils also contains code to encode a local file to a sheet:
+
+```
+Sub MacroToExecute()
+    EncodeFile(Me, "data.json", 10, 1)
+```
+
+This will place an encoded version of *data.json* on the sheet.
+
+Then, the file can be copied to the pyodide file system with
+
+```
+bl = block(xw.range((10,1),(50000,1)).decode_to_files())
+```
+```
+
+```
 
 ## Contact info
 
-You can contact Ruud van der Ham, the core developer, via ruud@salabim.org .
+You can contact Ruud van der Ham, the core developer, at ruud@salabim.org.
 
 ## Badges
 
