@@ -2,16 +2,27 @@
 
 [The full documentation can be found here.](https://www.salabim.org/xlwings_utils)
 
-#### version 25.0.8  2025-08-06
+#### version 25.0.10  2025-09-03
 
-  - `block.transpose()` is now called `block.transposed()`
+  - `block.highest_used_row_number` and `block.highest_used_column_number` now uses caching, if possible.
+  - tests for this caching have been added.
+
+#### version 25.0.9  2025-08-23
+
+  - Special support for Dropbox credentials under Pythonista is deprecated as environment variables can be set upon start of Pythonista.
+
+#### version 25.0.8  2025-08-22
+
+  - Dropbox credentials (environment variables) are now called `DROPBOX.APP_KEY`, `DROPBOX.APP_SECRET` and `DROPBOX.REFRESH_TOKEN`.
+  - under Pythonista, environment info should now be in `environ.toml`, rather than `.environ.toml`
+  - block.transpose()` is now called `block.transposed()`
   - optimised setting None values in a block (now deleted from the dict)
   - equality test added (based on value)
   - updated tests
 
 #### version 25.0.7  2025-08-05
 
-  - `block` does not accept a value anymore; use the new`block.from_value()` or use the new -arguably more useful- `block.from_range()`.
+  - `block` does not accept a value anymore; use the new `block.from_value()` or use the new -arguably more useful- `block.from_range()`.
   - `block.value` can't be used to set a value anymore (see above)
   - `block.encode_files` is now called `block.encode_file` and can encode only one file at a time
   - the class methods `from_xxx` do not support number_of_rows and number_of_columns parameters anymore; instead use the new `reshape` method 

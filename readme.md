@@ -38,7 +38,9 @@ The xlwings lite system does not provide access to the local file system. With t
 
 Currently, it is only possible to use full-access Dropbox apps.
 
-The easiest way to use the Dropbox functionality is to add the credentials to the environment variables. Add REFRESH_TOKEN, APP_KEY and APP_SECRET with their corresponding values to the environment variables. Instructions on how to get these variables can be found here.
+The easiest way to use the Dropbox functionality is to add the credentials to the environment variables. Add DROPBOX.REFRESH_TOKEN,
+DROPBOX.APP_KEY and DROPBOX.APP_SECRET with their corresponding values to the environment variables.
+Instructions on how to get these variables can be found here.
 
 In order to make a Dropbox app, and get the required environment variables, just execute this line from the command line (shell).
 
@@ -46,8 +48,10 @@ In order to make a Dropbox app, and get the required environment variables, just
 python -c "exec(__import__('requests').get('https://salabim.org/dropbox setup.py').text)"
 ```
 
+The file `dropbox setup.py` can also be found in the repo of xlwings_lite .
+
 Then, it is possible to list all files in a specified folder using the list_dropbox function.
-It is also possible to get the folders and to access all underlying folders.
+It is also possible to get at all folders and to access all underlying folders.
 
 The `read_dropbox` function can be used to read the contents (bytes) of a Dropbox file. As reading from Dropbox under pyodide is rather unreliable, xlwings_utils automatically retries several times (by default 100 times). The actual number of retries can be found with `read_dropbox.retries`.
 

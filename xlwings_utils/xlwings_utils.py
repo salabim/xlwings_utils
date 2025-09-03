@@ -5,7 +5,7 @@
 #  /_/\_\|_|  \_/\_/  |_||_| |_| \__, ||___/ _____  \__,_| \__||_||_||___/
 #                                |___/      |_____|
 
-__version__ = "25.0.8"
+__version__ = "25.0.10"
 
 
 import dropbox
@@ -20,6 +20,8 @@ Pythonista = sys.platform == "ios"
 try:
     import xlwings
 
+    xlwings = True
+
 except ImportError:
     xlwings = False
 
@@ -32,8 +34,8 @@ def dropbox_init(refresh_token=missing, app_key=missing, app_secret=missing, **k
 
     This function may to be called prior to using any dropbox function
     to specify the request token, app key and app secret.
-    If these are specified as REFRESH_TOKEN, APP_KEY and APP_SECRET
-    environment variables, it is no necessary to call dropbox_init().
+    If these are specified as DROPBOX.REFRESH_TOKEN, DROPBOX.APP_KEY and DROPBOX.APP_SECRET
+    environment variables, it is not necessary to call dropbox_init().
 
     Parameters
     ----------
@@ -55,47 +57,38 @@ def dropbox_init(refresh_token=missing, app_key=missing, app_secret=missing, **k
 
     Returns
     -------
-    -
+    dropbox object
     """
     global dbx
 
-    if Pythonista:
-        # under Pythonista, the environ is updated from the .environ.toml file, if present
-        environ_file = Path(os.environ["HOME"]) / "Documents" / ".environ.toml"
-
-        if environ_file.is_file():
-            with open(environ_file, "r") as f:
-                import toml
-
-                d = toml.load(f)
-                os.environ.update(d)
-
     if refresh_token is missing:
-        if "REFRESH_TOKEN" in os.environ:
-            refresh_token = os.environ["REFRESH_TOKEN"]
+        if "DROPBOX.REFRESH_TOKEN" in os.environ:
+            refresh_token = os.environ["DROPBOX.REFRESH_TOKEN"]
         else:
-            raise ValueError("no REFRESH_TOKEN found in environment.")
+            raise ValueError("no DROPBOX.REFRESH_TOKEN found in environment.")
     if app_key is missing:
-        if "APP_KEY" in os.environ:
-            app_key = os.environ["APP_KEY"]
+        if "DROPBOX.APP_KEY" in os.environ:
+            app_key = os.environ["DROPBOX.APP_KEY"]
         else:
-            raise ValueError("no APP_KEY found in environment.")
+            raise ValueError("no DROPBOX.APP_KEY found in environment.")
     if app_secret is missing:
-        if "APP_SECRET" in os.environ:
-            app_secret = os.environ["APP_SECRET"]
+        if "DROPBOX.APP_SECRET" in os.environ:
+            app_secret = os.environ["DROPBOX.APP_SECRET"]
         else:
-            raise ValueError("no APP_SECRET found in environment.")
+            raise ValueError("no DROPBOX.APP_SECRET found in environment.")
 
-    dbx = dropbox.Dropbox(oauth2_refresh_token=refresh_token, app_key=app_key, app_secret=app_secret, **kwargs)
+    _dbx = dropbox.Dropbox(oauth2_refresh_token=refresh_token, app_key=app_key, app_secret=app_secret, **kwargs)
     try:
-        dbx.files_list_folder(path="")  # just to test proper credentials
+        _dbx.files_list_folder(path="")  # just to test proper credentials
     except dropbox.exceptions.AuthError:
         raise ValueError("invalid dropbox credentials")
+    return _dbx
 
 
 def _login_dbx():
+    global dbx
     if dbx is None:
-        dropbox_init()  # use environment
+        dbx = dropbox_init()  # use environment
 
 
 def list_dropbox(path="", recursive=False, show_files=True, show_folders=False):
@@ -110,7 +103,7 @@ def list_dropbox(path="", recursive=False, show_files=True, show_folders=False):
         path from which to list all files (default: '')
 
     recursive : bool
-        if True, recursively list files. if False (default) no recursion
+        if True, recursively list files and folders. if False (default) no recursion
 
     show_files : bool
         if True (default), show file entries
@@ -123,10 +116,6 @@ def list_dropbox(path="", recursive=False, show_files=True, show_folders=False):
     Returns
     -------
     files : list
-
-    Note
-    ----
-    Directory entries are never returned
 
     Note
     ----
@@ -289,6 +278,8 @@ class block:
         self.dict = {}
         self.number_of_rows = number_of_rows
         self.number_of_columns = number_of_columns
+        self._highest_used_row_number = None
+        self._highest_used_column_number = None
 
     def __eq__(self, other):
         if isinstance(other, block):
@@ -471,8 +462,14 @@ class block:
         if value is None:
             if (row, column) in self.dict:
                 del self.dict[row, column]
+                self._highest_used_row_number = None  # invalidate cached value
+                self._highest_used_column_number = None  # invalidate cached value
         else:
             self.dict[row, column] = value
+            if self._highest_used_row_number:
+                self._highest_used_row_number = max(self._highest_used_row_number, row)
+            if self._highest_used_column_number:
+                self._highest_used_column_number = max(self._highest_used_column_number, column)
 
     def __getitem__(self, row_column):
         row, column = row_column
@@ -499,6 +496,7 @@ class block:
     def number_of_rows(self, value):
         if value < 1:
             raise ValueError(f"number_of_rows should be >=1, not {value}")
+        self._highest_used_row_number = None
         self._number_of_rows = value
         for row, column in list(self.dict):
             if row > self._number_of_rows:
@@ -512,6 +510,7 @@ class block:
     def number_of_columns(self, value):
         if value < 1:
             raise ValueError(f"number_of_columns should be >=1, not {value}")
+        self._highest_used_column_number = None
         self._number_of_columns = value
         for row, column in list(self.dict):
             if column > self._number_of_columns:
@@ -519,17 +518,22 @@ class block:
 
     @property
     def highest_used_row_number(self):
-        if self.dict:
-            return max(row for (row, column) in self.dict)
-        else:
-            return 1
+        if not self._highest_used_row_number:
+            if self.dict:
+                self._highest_used_row_number = max(row for (row, column) in self.dict)
+            else:
+                self._highest_used_row_number = 1
+        return self._highest_used_row_number
 
     @property
     def highest_used_column_number(self):
-        if self.dict:
-            return max(column for (row, column) in self.dict)
-        else:
-            return 1
+        if not self._highest_used_column_number:
+            if self.dict:
+                self._highest_used_column_number = max(column for (row, column) in self.dict)
+            else:
+                self._highest_used_column_number = 1
+
+        return self._highest_used_column_number
 
     def __repr__(self):
         return f"block({self.value})"
