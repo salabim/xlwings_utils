@@ -4,9 +4,9 @@ from pathlib import Path
 import io
 
 if __name__ == "__main__":  # to make the tests run without the pytest cli
-    file_folder = os.path.dirname(__file__)
-    os.chdir(file_folder)
-    sys.path.insert(0, file_folder + "/../xlwings_utils")
+    import os, sys # three lines to use the local package and chdir
+    os.chdir(os.path.dirname(__file__))
+    sys.path.insert(0, os.path.dirname(__file__) + "/../")
 
 import pytest
 

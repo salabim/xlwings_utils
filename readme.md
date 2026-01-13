@@ -6,7 +6,7 @@ This module provides some useful functions to be used in xlwings (lite).
 
 ## Installation
 
-Just add `xlwings-utils` and `ssl` (even if `dropbox` is not used) to the *requirements.txt* tab. 
+Just add `xlwings-utils` to the *requirements.txt* tab. 
 
 In the script, add
 
@@ -28,50 +28,109 @@ It is recommended to put
 import xlwings_utils as xwu
 ```
 
-at the top of a xlwings lite script.
+at the top of an xlwings lite script.
 
 If an application runs under xlwings, `xwu.xlwings` will be True. False, if not.
 
-## Dropbox support
+## Cloud support
 
-The xlwings lite system does not provide access to the local file system. With this module, files can be copied between Dropbox and the local pyodide file system, making it possible to indirectly use the local file system.
+The xlwings lite system does not provide access to the local file system. With xlwings_lites, files can be copied between a cloud storage provider and the local pyodide file system, making it possible to indirectly use the local file system.
 
-Currently, it is only possible to use full-access Dropbox apps.
+Currently, xlwings_utils supports full-access Dropbox apps and Nextcloud (although the latter does not work under xlwings Lite .
+
+### Dropbox
 
 The easiest way to use the Dropbox functionality is to add the credentials to the environment variables. Add DROPBOX.REFRESH_TOKEN,
 DROPBOX.APP_KEY and DROPBOX.APP_SECRET with their corresponding values to the environment variables.
 Instructions on how to get these variables can be found here.
 
 In order to make a Dropbox app, and get the required environment variables, just execute this line from the command line (shell).
-
 ```
 python -c "exec(__import__('requests').get('https://salabim.org/dropbox setup.py').text)"
 ```
 
 The file `dropbox setup.py` can also be found in the repo of xlwings_lite .
 
-Then, it is possible to list all files in a specified folder using the list_dropbox function.
+Then, it is possible to list all files in a specified folder using the `dropbox.dir()` function.
 It is also possible to get at all folders and to access all underlying folders.
 
-The `read_dropbox` function can be used to read the contents (bytes) of a Dropbox file. As reading from Dropbox under pyodide is rather unreliable, xlwings_utils automatically retries several times (by default 100 times). The actual number of retries can be found with `read_dropbox.retries`.
+The function `dropbox.read()` can be used to read a Dropbox file (as bytes). By default, the result is cached.
 
-The function `write_dropbox` can be used to write contents (bytes) to a Dropbox file.
+The function `dropbox.write()` can be used to write contents (bytes) to Dropbox
 
-The functions `list_local`, `read_local` and `write_local` offer similar functionality for the local file system (on pyodide).
+The function `dropbox.delete()` can be used to delete a Dropbox file.
+
+### Nextcloud
+
+The easiest way to use the Nextcloud functionality is to add the credentials to the environment variables. Add NEXTCLOUD.URL, NEXTCLOUD.USERNAME and NEXTCLOUD.PASSWORD with their corresponding values to the environment variables.
+Instructions on how to get these variables can be found here.
+
+Login to the file section of the browser version of your Nextcloud provider, like
+https://use11.thegood.cloud/apps/files/files
+
+Then click on Files settings (bottom left) and you will see a header WebDAV. NEXTCLOUD.URL is the given URL.
+Next, click *If you have enabled 2FA, you must create and use a new app password by clicking here.* " Then, create an app and copy the password to NEXTCLOUD.PASSWORD. Finally NEXTCLOUD.USERNAME is the user name.
+
+Then, it is possible to list all files in a specified folder using the `nextcloud.dir()` function.
+It is also possible to get at all folders and to access all underlying folders.
+
+The function `nextcloud.read()` can be used to read a Nextcloud file (as bytes). By default, the result is cached.
+
+The function `nextcloud.write()` can be used to write contents (bytes) to Nextcloud
+
+The function `nextcloud.delete()` can be used to delete a Nextcloud file.
+
+> [!IMPORTANT]
+>
+> As of now, nextcloud does not work under xlwings Lite, because of limitations in a sandboxed environments (it runs under native Python though)
+
+### for all cloud services
+
+Access is the same for Dropbox and Nextcloud.
 
 So, a way to access a file on the system's drive (mapped to Dropbox) as a local file is:
 
 ```
-contents = xwu.read_dropbox('/downloads/file1.xls')
-xwu.write_local('file1.xlsx')
+cloud = xwu.dropbox
+contents = cloud.read('/downloads/file1.xls')
+local.write('file1.xlsx')
 df = pandas.read_excel"file1.xlsx")
 ...
 ```
 And the other direction:
 ```
-contents = xwu.read_local('file1.gif')
-xwu.write_dropbox('/downloads/file1.gif')
+contents = local.read('file1.gif')
+cloud.write('/downloads/file1.gif')
 ```
+
+## Importing a module from a cloud services (dropbox)
+
+With `import_from_folder`, it is possible to import a module from a folder in a cloud service (just dropbox for now), rather than from PyPI via `requirements.txt`
+
+This can be very useful in case:
+
+- the module is not (yet) available under PyPI
+
+- the module is being developed and the developer wants to debug the module prior to uploading to PyPI
+
+- the module is just uploaded to PyPI, but it is not yet visible in pyodide.
+
+Example:
+
+```
+import xlwings_utils as xwu
+vardict = xwu.import_from_folder(cloud=xwu.dropbox, folder_name="/Python/vardict/vardict")
+# vardict will now be imported from dropbox
+```
+
+Note that if a module with the same name is already imported, calling `xwu.import_from_folder` has no effect.
+
+The method `xwu.import_from_folder` has two required parameters:
+
+- cloud: as of now only `xwu.dropbox`
+- folder_name: path to the module in the cloud service
+
+The method returns the loaded module.
 
 ## Block support
 
@@ -309,9 +368,32 @@ Then, the file can be copied to the pyodide file system with
 ```
 bl = block(xw.range((10,1),(50000,1)).decode_to_files())
 ```
-```
+## Miscellaneous
+
+xlwings_utils provides a useful `timer` decorator that may be used to show the name, the entry time, the exit time and the duration of a xlwings script.
+
+To use this, put the decorator immediately after the `xw.script` decorator, like:
 
 ```
+@xw.script
+@xwu.timer
+def MyScript(book: xw.Book):
+    ...
+```
+
+This will print something like:
+
+```
+Done MyScript  11:51:13.24 - 11:51:20.28 (7.04s)
+```
+
+
+
+
+
+
+
+
 
 ## Contact info
 

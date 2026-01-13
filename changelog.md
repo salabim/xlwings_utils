@@ -2,6 +2,82 @@
 
 [The full documentation can be found here.](https://www.salabim.org/xlwings_utils)
 
+#### version 26.0.2  2026-01-12
+
+  - the optional parameter `module_name` of `import_from_folder` has been removed, as it doesn't serve any pupose.
+
+#### version 26.0.1  2026-01-11
+
+  - This version introduces `import_from_folder`, which allows importing a module from a folder in a cloud service (just dropbox for now), rather than from PyPI via `requirements.txt`
+
+    This can be very useful in case:
+    - the module is not (yet) available under PyPI
+
+    - the module is being developed and the developer wants to debug the module prior to uploading to PyPI
+
+    - the module is just uploaded to PyPI, but it is not yet visible in pyodide.
+
+    Example:
+    ```
+    import xlwings_utils as xwu
+    vardict = xwu.import_from_folder(cloud=xwu.dropbox, folder_name="/Python/vardict/vardict")
+    # vardict will now be imported from dropbox
+    ```
+
+    Note that if a module with the same name is already imported, calling `xwu.import_from_folder` has no effect.
+
+#### version 26.0.0  2026-01-03
+
+  - `block.highest_used_row_number` and `block.highest_used_column_number` did ignore cells containing the value 0. Fixed,
+
+#### version 25.2.2  2025-12-21
+  - Both `dropbox.read()` and `nextcloud.read()` now cache the contents by default. The cache parameter may be used to switch off caching.
+
+#### version 25.2.1  2025-12-20
+  - Bug in the calculation of number of seconds of @timer fixed.
+
+#### version 25.2.0  2025-12-15
+
+  - Overhaul of accessing cloud storage. Not only Dropbox, but also Nextcloud is now supported (although not working under xlwings Lite (yet?)).
+    The interface is unified and goes via a submodule, i.e. `xlwings_utils.dropbox` or `xlwings_utils.nextcloud`.
+    
+    -  `init_dropbox` is now `dropbox.init`
+    -  `read_dropbox` is now `dropbox.read`
+    -  `write_dropbox` is now `dropbox.write`
+    -  `list_dropbox` is now `dropbox.dir`
+    -  `delete_from_dropbox` is now `dropbox.delete`
+    
+    The same functionality is provided for Nextcloud. For Nextcloud to work, it is required to provide url, username and password. This can be done via `nextcloud.init` or -preferably- via the environment variables `NEXTCLOUD.URL`, `NEXTCLOUD.USERNAME` and `NEXTCLOUD.PASSWORD`.
+    
+  - Overhaul of accessing local storage.
+    The interface is now more or less the same as the cloud access interface.
+    `read_local` is now `local.read`
+    `write_local` is now `local.write`
+    `list_local` is now `local.dir`
+
+
+ #### version 25.1.3  2025-09-22
+
+  - Added the timer decorator, which should be placed after the @xw.script decorator.
+    Upon completion, it will then show the name, entry time, exit time and the duration, like
+
+    `Done MyScript  11:51:13.24 - 11:51:20.28 (7.04s)`
+
+#### version 25.1.2  2025-09-10
+
+  - Some internal changes and doc string updates
+
+  #### version 25.1.1  2025-09-09
+
+  - Added `requests` to dependencies.
+
+#### version 25.1.0  2025-09-09
+
+  - Dropbox file handling does not use the dropbox module anymore
+  - File reading from dropbox is now reliable ... at last
+  - Introduced `delete_from_dropbox()` function.
+  - ssl is not required in  requirements.txt anymore
+
 #### version 25.0.10  2025-09-03
 
   - `block.highest_used_row_number` and `block.highest_used_column_number` now uses caching, if possible.

@@ -5,256 +5,24 @@
 #  /_/\_\|_|  \_/\_/  |_||_| |_| \__, ||___/ _____  \__,_| \__||_||_||___/
 #                                |___/      |_____|
 
-__version__ = "25.0.10"
+__version__ = "26.0.2"
 
-
-import dropbox
 from pathlib import Path
-import os
 import sys
 import math
 import base64
+import datetime
+import functools
+import importlib
 
-dbx = None
 Pythonista = sys.platform == "ios"
+
 try:
     import xlwings
-
-    xlwings = True
-
 except ImportError:
     xlwings = False
 
 missing = object()
-
-
-def dropbox_init(refresh_token=missing, app_key=missing, app_secret=missing, **kwargs):
-    """
-    dropbox initialize
-
-    This function may to be called prior to using any dropbox function
-    to specify the request token, app key and app secret.
-    If these are specified as DROPBOX.REFRESH_TOKEN, DROPBOX.APP_KEY and DROPBOX.APP_SECRET
-    environment variables, it is not necessary to call dropbox_init().
-
-    Parameters
-    ----------
-    refresh_token : str
-        oauth2 refreshntoken
-
-        if omitted: use the environment variable REFRESH_TOKEN
-
-    app_key : str
-        app key
-
-        if omitted: use the environment variable APP_KEY
-
-
-    app_secret : str
-        app secret
-
-        if omitted: use the environment variable APP_SECRET
-
-    Returns
-    -------
-    dropbox object
-    """
-    global dbx
-
-    if refresh_token is missing:
-        if "DROPBOX.REFRESH_TOKEN" in os.environ:
-            refresh_token = os.environ["DROPBOX.REFRESH_TOKEN"]
-        else:
-            raise ValueError("no DROPBOX.REFRESH_TOKEN found in environment.")
-    if app_key is missing:
-        if "DROPBOX.APP_KEY" in os.environ:
-            app_key = os.environ["DROPBOX.APP_KEY"]
-        else:
-            raise ValueError("no DROPBOX.APP_KEY found in environment.")
-    if app_secret is missing:
-        if "DROPBOX.APP_SECRET" in os.environ:
-            app_secret = os.environ["DROPBOX.APP_SECRET"]
-        else:
-            raise ValueError("no DROPBOX.APP_SECRET found in environment.")
-
-    _dbx = dropbox.Dropbox(oauth2_refresh_token=refresh_token, app_key=app_key, app_secret=app_secret, **kwargs)
-    try:
-        _dbx.files_list_folder(path="")  # just to test proper credentials
-    except dropbox.exceptions.AuthError:
-        raise ValueError("invalid dropbox credentials")
-    return _dbx
-
-
-def _login_dbx():
-    global dbx
-    if dbx is None:
-        dbx = dropbox_init()  # use environment
-
-
-def list_dropbox(path="", recursive=False, show_files=True, show_folders=False):
-    """
-    list_dropbox
-
-    returns all dropbox files/folders in path
-
-    Parameters
-    ----------
-    path : str or Pathlib.Path
-        path from which to list all files (default: '')
-
-    recursive : bool
-        if True, recursively list files and folders. if False (default) no recursion
-
-    show_files : bool
-        if True (default), show file entries
-        if False, do not show file entries
-
-    show_folders : bool
-        if True, show folder entries
-        if False (default), do not show folder entries
-
-    Returns
-    -------
-    files : list
-
-    Note
-    ----
-    If REFRESH_TOKEN, APP_KEY and APP_SECRET environment variables are specified,
-    it is not necessary to call dropbox_init() prior to any dropbox function.
-    """
-    _login_dbx()
-    out = []
-    result = dbx.files_list_folder(path, recursive=recursive)
-
-    for entry in result.entries:
-        if show_files and isinstance(entry, dropbox.files.FileMetadata):
-            out.append(entry.path_display)
-        if show_folders and isinstance(entry, dropbox.files.FolderMetadata):
-            out.append(entry.path_display + "/")
-
-    while result.has_more:
-        result = dbx.files_list_folder_continue(result.cursor)
-        for entry in result.entries:
-            if show_files and isinstance(entry, dropbox.files.FileMetadata):
-                out.append(entry.path_display)
-            if show_folders and isinstance(entry, dropbox.files.FolderMetadata):
-                out.append(entry.path_display + "/")
-
-    return out
-
-
-def read_dropbox(dropbox_path, max_retries=100):
-    """
-    read_dropbox
-
-    read from dopbox at given path
-
-    Parameters
-    ----------
-    dropbox_path : str or Pathlib.Path
-        path to read from
-
-    max_retries : int
-        number of retries (default: 100)
-
-    Returns
-    -------
-    contents of the dropbox file : bytes
-
-    Note
-    ----
-    If REFRESH_TOKEN, APP_KEY and APP_SECRET environment variables are specified,
-    it is not necessary to call dropbox_init() prior to any dropbox function.
-
-    As reading from dropbox is very unreliable under pyodide, reading will have to be retried (by default maximum 100 times).
-    The number of retries can be found with read_dropbox.retries.
-    """
-
-    _login_dbx()
-    for read_dropbox.retries in range(max_retries + 1):
-        metadata, response = dbx.files_download(dropbox_path)
-        file_content = response.content
-        if len(file_content) == metadata.size:
-            return file_content
-    raise OSError(f"after {max_retries} still no valid response")
-
-
-def write_dropbox(dropbox_path, contents):
-    """
-    write_dropbox
-
-    write from dopbox at given path
-
-    Parameters
-    ----------
-    dropbox_path : str or Pathlib.Path
-        path to write to
-
-    contents : bytes
-        contents to be written
-
-    Note
-    ----
-    If REFRESH_TOKEN, APP_KEY and APP_SECRET environment variables are specified,
-    it is not necessary to call dropbox_init() prior to any dropbox function.
-    """
-    _login_dbx()
-    dbx.files_upload(contents, dropbox_path, mode=dropbox.files.WriteMode.overwrite)
-
-
-def list_local(path, recursive=False, show_files=True, show_folders=False):
-    """
-    list_local
-
-    returns all local files/folders in path
-
-    Parameters
-    ----------
-    path : str or Pathlib.Path
-        path from which to list all files (default: '')
-
-    recursive : bool
-        if True, recursively list files. if False (default) no recursion
-
-    show_files : bool
-        if True (default), show file entries
-        if False, do not show file entries
-
-    show_folders : bool
-        if True, show folder entries
-        if False (default), do not show folder entries
-
-    Returns
-    -------
-    files, relative to path : list
-    """
-    path = Path(path)
-
-    result = []
-    for entry in path.iterdir():
-        if entry.is_file():
-            if show_files:
-                result.append(str(entry))
-        elif entry.is_dir():
-            if show_folders:
-                result.append(str(entry) + "/")
-            if recursive:
-                result.extend(list_local(entry, recursive=recursive, show_files=show_files, show_folders=show_folders))
-    return result
-
-
-def write_local(path, contents):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "wb") as f:
-        f.write(contents)
-
-
-def read_local(path):
-    path = Path(path)
-    with open(path, "rb") as f:
-        contents = f.read()
-    return contents
 
 
 class block:
@@ -278,8 +46,7 @@ class block:
         self.dict = {}
         self.number_of_rows = number_of_rows
         self.number_of_columns = number_of_columns
-        self._highest_used_row_number = None
-        self._highest_used_column_number = None
+        self._invalidate_highest_used_cache()
 
     def __eq__(self, other):
         if isinstance(other, block):
@@ -316,7 +83,9 @@ class block:
 
         for row, row_contents in enumerate(value, 1):
             for column, item in enumerate(row_contents, 1):
-                if item and not (isinstance(item, float) and math.isnan(item)):
+                if (item is None) or (item == "") or (isinstance(item, float) and math.isnan(item)):
+                    ...  # ignore this item
+                else:
                     bl.dict[row, column] = item
                 bl._number_of_columns = max(bl.number_of_columns, column)
         return bl
@@ -453,17 +222,21 @@ class block:
     def value(self):
         return [[self.dict.get((row, column)) for column in range(1, self.number_of_columns + 1)] for row in range(1, self.number_of_rows + 1)]
 
+    def _invalidate_highest_used_cache(self):
+        self._highest_used_row_number = None
+        self._highest_used_column_number = None
+
     def __setitem__(self, row_column, value):
         row, column = row_column
         if row < 1 or row > self.number_of_rows:
-            raise IndexError(f"row must be between 1 and {self.number_of_rows} not {row}")
+            raise IndexError(f"row must be between 1 and {self.number_of_rows}; not {row}")
         if column < 1 or column > self.number_of_columns:
-            raise IndexError(f"column must be between 1 and {self.number_of_columns} not {column}")
+            raise IndexError(f"column must be between 1 and {self.number_of_columns}; not {column}")
         if value is None:
             if (row, column) in self.dict:
                 del self.dict[row, column]
-                self._highest_used_row_number = None  # invalidate cached value
-                self._highest_used_column_number = None  # invalidate cached value
+                self._invalidate_highest_used_cache()
+
         else:
             self.dict[row, column] = value
             if self._highest_used_row_number:
@@ -495,8 +268,8 @@ class block:
     @number_of_rows.setter
     def number_of_rows(self, value):
         if value < 1:
-            raise ValueError(f"number_of_rows should be >=1, not {value}")
-        self._highest_used_row_number = None
+            raise ValueError(f"number_of_rows should be >=1; not {value}")
+        self._invalidate_highest_used_cache()
         self._number_of_rows = value
         for row, column in list(self.dict):
             if row > self._number_of_rows:
@@ -509,8 +282,8 @@ class block:
     @number_of_columns.setter
     def number_of_columns(self, value):
         if value < 1:
-            raise ValueError(f"number_of_columns should be >=1, not {value}")
-        self._highest_used_column_number = None
+            raise ValueError(f"number_of_columns should be >=1; not {value}")
+        self._invalidate_highest_used_cache()
         self._number_of_columns = value
         for row, column in list(self.dict):
             if column > self._number_of_columns:
@@ -996,6 +769,73 @@ def trigger_macro(sheet):
     """
 
     sheet["A1"].value = "=NOW()"
+
+
+def timer(func):
+    """
+    this decorator should be placed after the @xw.script decorator
+
+    it will show the name, entry time, exit time and the duration, like
+    Done MyScript  11:51:13.24 - 11:51:20.28 (7.04s)
+
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        now0 = datetime.datetime.now()
+        result = func(*args, **kwargs)
+        now1 = datetime.datetime.now()
+        diff = (now1 - now0).total_seconds()
+        print(f"Done {func.__name__}  {now0:%H:%M:%S.}{int(now0.microsecond / 10000):02d} - {now1:%H:%M:%S.}{int(now1.microsecond / 10000):02d} ({diff:.2f}s)")
+
+        return result
+
+    return wrapper
+
+
+def import_from_folder(cloud, folder_name, module_name=None):
+    """
+    imports a module from a folder provided by a cloud service (dropbox)
+
+    Parameters
+    ----------
+    cloud : cloud service
+        name of cloud service (e.g. xwu.dropbox)
+
+    folder_name: str or Path
+        fully qualified name of the folder containing the module, e.g.
+
+        /Python/istr/istr
+
+    Returns
+    -------
+        link to module
+
+    Note
+    ----
+    If the module is already imported, no action 
+    """
+    folder_name_path = Path(folder_name)
+
+    if module_name in sys.modules: 
+        return sys.modules[module_name]
+
+    my_packages = Path("/my_packages/")
+    my_packages.mkdir(parents=True, exist_ok=True)
+
+    for entry in cloud.dir(folder_name, recursive=True):
+        entry_path = Path(entry)
+        rel_path = entry_path.relative_to(folder_name_path)
+        if "__pycache__" in str(rel_path):
+            continue
+        contents = cloud.read(entry_path)
+        (my_packages/module_name).mkdir(parents=True, exist_ok=True)
+        with open(my_packages / module_name / rel_path, "wb") as f:
+            f.write(contents)
+            
+    if str(my_packages) not in sys.path:
+        sys.path = [str(my_packages)] + sys.path
+    return importlib.import_module(module_name)
 
 
 if __name__ == "__main__":
