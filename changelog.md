@@ -2,9 +2,21 @@
 
 [The full documentation can be found here.](https://www.salabim.org/xlwings_utils)
 
+#### version 26.0.3  2026-01-15
+
+  - the method `import_from_folder` is now part of a cloud module itself, so for instance `xwu.dropbox.import_from_folder`
+
+  - xwu.github is a new cloud module, that allows accessing the complete GitHub-space. As of now, writing and deleting files is not supported.
+
+    It is strongly recommended to obtain a (free) GitHub token and set the environment variable GITHUB.TOKEN to that value.
+    `xwu.github.dir()`, `xwu.github.read()` and `xwu.github.import_from_folder` require a tuple of the owner,  repo and path to be given.
+    Specific to this cloud module, the method `xwu.github.get_repos` is implemented to get the names of all repos of a given owner.
+    
+    Note that, if you don't specify a token, GitHub allows only 60 requests per hour, whereas with a token 5000 requests per hour are allowed. A warning will be printed in that case.
+
 #### version 26.0.2  2026-01-12
 
-  - the optional parameter `module_name` of `import_from_folder` has been removed, as it doesn't serve any pupose.
+  - the optional parameter `module_name` of `import_from_folder` has been removed, as it doesn't serve any purpose.
 
 #### version 26.0.1  2026-01-11
 

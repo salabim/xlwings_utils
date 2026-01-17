@@ -1,6 +1,9 @@
 import os
 import requests
 import json
+import importlib
+from pathlib import Path
+import sys
 
 _token = None
 missing = object()
@@ -156,10 +159,10 @@ def read(path, cached=True):
     ----------
     path : str or Pathlib.Path
         path to read from
-        
+
     cached : bool
         if True (default), result will be cached
-        
+
         if False, read on each call
 
     Returns
@@ -177,9 +180,9 @@ def read(path, cached=True):
     """
     if cached:
         if path in read.cache:
-            return read.cache[path]        
+            return read.cache[path]
     else:
-        read.cache={}
+        read.cache = {}
     _login()
 
     path = normalize_path(path)
@@ -194,10 +197,12 @@ def read(path, cached=True):
         for chunk in response.iter_content(chunk_size=1024):
             if chunk:
                 chunks.append(chunk)
-    result= b"".join(chunks)        
-    read.cache[path]=result
+    result = b"".join(chunks)
+    read.cache[path] = result
     return result
-read.cache={}
+
+
+read.cache = {}
 
 
 def write(path, contents):
@@ -268,3 +273,45 @@ def delete(path):
         response.raise_for_status()
     except requests.exceptions.HTTPError as e:
         raise OSError(f"file {str(path)} could not be deleted. Original message is {e}") from None
+
+
+def import_from_folder(folder_name):
+    """
+    imports a module from a dropbox folder
+
+    Parameters
+    ----------
+    folder_name: str or Path
+        fully qualified name of the folder containing the module, e.g.
+
+        /Python/istr/istr
+
+    Returns
+    -------
+        link to module
+
+    Note
+    ----
+    If the module is already imported, no action
+    """
+    folder_name_path = Path(folder_name)
+    module_name = folder_name_path.parts[-1]
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+
+    my_packages = Path("my_packages/")
+    my_packages.mkdir(parents=True, exist_ok=True)
+
+    for entry in dir(folder_name, recursive=True):
+        entry_path = Path(entry)
+        rel_path = entry_path.relative_to(folder_name_path)
+        if "__pycache__" in str(rel_path):
+            continue
+        contents = read(entry_path.as_posix())
+        (my_packages / module_name).mkdir(parents=True, exist_ok=True)
+        with open(my_packages / module_name / rel_path, "wb") as f:
+            f.write(contents)
+
+    if str(my_packages) not in sys.path:
+        sys.path = [str(my_packages)] + sys.path
+    return importlib.import_module(module_name)

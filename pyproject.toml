@@ -10,7 +10,7 @@ authors = [
     { name = "Ruud van der Ham", email = "rt.van.der.ham@gmail.com" },
 ]
 description = "xlwings_utils"
-version = "26.0.2"
+version = "26.0.3"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
