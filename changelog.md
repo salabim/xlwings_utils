@@ -2,6 +2,24 @@
 
 [The full documentation can be found here.](https://www.salabim.org/xlwings_utils)
 
+#### version 26.0.4  2026-01-18
+
+  - added `undecorated` function. With this, a function can be undecorated. This can be very useful in xlwings Lite if you would like to call a function that is decorated with @xw.script. Example:
+    ```
+    @xw.script
+    def Task_1(book: xw.Book):
+        ...
+    
+    @xw.script
+    def Task_2(book: xw.Book):
+        ...
+        
+    @xw.script
+    def Task_1_2(book: xw.Book):
+        xwu.undecorated(Task_1)(book)
+        xwu.undecorated(Task_2)(book)    
+    ```
+    
 #### version 26.0.3  2026-01-15
 
   - the method `import_from_folder` is now part of a cloud module itself, so for instance `xwu.dropbox.import_from_folder`

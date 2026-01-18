@@ -402,7 +402,7 @@ Then, the file can be copied to the pyodide file system with
 ```
 bl = block(xw.range((10,1),(50000,1)).decode_to_files())
 ```
-## Miscellaneous
+## Miscellaneous, timer decorator
 
 xlwings_utils provides a useful `timer` decorator that may be used to show the name, the entry time, the exit time and the duration of a xlwings script.
 
@@ -419,6 +419,26 @@ This will print something like:
 
 ```
 Done MyScript  11:51:13.24 - 11:51:20.28 (7.04s)
+```
+## Miscellaneous, calling function decorated with xw.script
+
+xlwings_utils contains the `undecorated` function to remove the decorators from function; this is particularly useful if you would like to call a function that is decorated with @xw.script. Example:
+```
+    @xw.script
+    def Task_1(book: xw.Book):
+        ...
+    
+    @xw.script
+    def Task_2(book: xw.Book):
+        ...
+        
+    @xw.script
+    def Task_1_2(book: xw.Book):
+        xwu.undecorated(Task_1)(book)
+        xwu.undecorated(Task_2)(book)    
+```
+The function works only for decorators that use the __wrapped__ attribute, most likely via @functools.wraps, which is indeed the case for xw.script, and xwu.timer. 
+
 ```
 
 

@@ -5,7 +5,7 @@
 #  /_/\_\|_|  \_/\_/  |_||_| |_| \__, ||___/ _____  \__,_| \__||_||_||___/
 #                                |___/      |_____|
 
-__version__ = "26.0.3"
+__version__ = "26.0.4"
 
 from pathlib import Path
 import sys
@@ -793,49 +793,24 @@ def timer(func):
     return wrapper
 
 
-def import_from_folder(cloud, folder_name, repo=None, owner=None):
+def undecorated(func):
     """
-    imports a module from a folder provided by a cloud service (dropbox)
+    returns a function, with all decorators removed.
+    This is very handy when calling a @xw.script decorated function from another function
 
     Parameters
     ----------
-    cloud : cloud service
-        name of cloud service (e.g. xwu.dropbox)
-
-    folder_name: str or Path
-        fully qualified name of the folder containing the module, e.g.
-
-        /Python/istr/istr
+    func : callable
 
     Returns
     -------
-        link to module
+    undecorated function : callable
 
     Note
     ----
-    If the module is already imported, no action
+    Only undecorates decorator which use a __wrapped__ attribute, most likely via @functools.wraps, which is indeed the case for xw.script, and xwu.timer.
     """
-    folder_name_path = Path(folder_name)
-    module_name = folder_name_path.parts[-1]
-    if module_name in sys.modules:
-        return sys.modules[module_name]
-
-    my_packages = Path("/my_packages/")
-    my_packages.mkdir(parents=True, exist_ok=True)
-
-    for entry in cloud.dir(folder_name, repo=repo, owner=owner, recursive=True):
-        entry_path = Path(entry)
-        rel_path = entry_path.relative_to(folder_name_path)
-        if "__pycache__" in str(rel_path):
-            continue
-        contents = cloud.read(entry_path, repo=repo, owner=owner)
-        (my_packages / module_name).mkdir(parents=True, exist_ok=True)
-        with open(my_packages / module_name / rel_path, "wb") as f:
-            f.write(contents)
-
-    if str(my_packages) not in sys.path:
-        sys.path = [str(my_packages)] + sys.path
-    return importlib.import_module(module_name)
+    return undecorated(func.__wrapped__) if hasattr(func, "__wrapped__") else func
 
 
 if __name__ == "__main__":
