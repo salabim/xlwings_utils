@@ -2,10 +2,22 @@
 
 [The full documentation can be found here.](https://www.salabim.org/xlwings_utils)
 
+#### version 26.1.0  2026-03-01
+
+  - Now xlwings_utils can be used as a CLI to show, extract or replace information of xlwings Lite enabled workbooks. See the read.me for details.
+
+#### version 26.0.7  2026-01-27
+
+  - local now also supports load_from_folder
+
+#### version 26.0.6  2026-01-27
+
+  - added the `get_environ` function, which allows setting (additional) enviroment variables from an Excel worksheet.
+
 #### version 26.0.5  2026-01-19
 
   - the `undecorated` function, now has an extra parameter `max_number`, which can be used to limit the number of removed decorators.
-  
+
 #### version 26.0.4  2026-01-18
 
   - added `undecorated` function. With this, a function can be undecorated. This can be very useful in xlwings Lite if you would like to call a function that is decorated with @xw.script. Example:

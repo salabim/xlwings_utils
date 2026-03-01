@@ -1,4 +1,7 @@
 from pathlib import Path
+import sys
+import importlib
+from pathlib import Path
 
 def dir(path, recursive=False, show_files=True, show_folders=False):
     """
@@ -51,3 +54,29 @@ def read(path):
     with open(path, "rb") as f:
         contents = f.read()
     return contents
+    
+def import_from_folder(folder_name):
+    """
+    imports a module from a folder
+
+    Parameters
+    ----------
+    path : path
+
+    Returns
+    -------
+        link to module
+
+    Note
+    ----
+    If the module is already imported, no action
+    """
+
+    folder_name_path = Path(folder_name)
+    module_name = folder_name_path.parts[-1]
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+
+    if str(folder_name_path) not in sys.path:
+        sys.path = [str(folder_name_path)] + sys.path
+    return importlib.import_module(module_name)

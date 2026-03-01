@@ -293,6 +293,11 @@ def import_from_folder(folder_name):
     Note
     ----
     If the module is already imported, no action
+
+    Note
+    ----
+    If DROPBOX.REFRESH_TOKEN, DROPBOX.APP_KEY and DROPBOX.APP_SECRET environment variables are specified,
+    it is not necessary to call dropbox_init() prior to any dropbox function.    
     """
     folder_name_path = Path(folder_name)
     module_name = folder_name_path.parts[-1]

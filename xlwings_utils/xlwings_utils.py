@@ -5,7 +5,7 @@
 #  /_/\_\|_|  \_/\_/  |_||_| |_| \__, ||___/ _____  \__,_| \__||_||_||___/
 #                                |___/      |_____|
 
-__version__ = "26.0.5"
+__version__ = "26.1.0"
 
 from pathlib import Path
 import sys
@@ -13,7 +13,11 @@ import math
 import base64
 import datetime
 import functools
-import importlib
+import argparse
+import zipfile
+from lxml import etree 
+import json
+import io
 
 Pythonista = sys.platform == "ios"
 
@@ -793,17 +797,20 @@ def timer(func):
     return wrapper
 
 
-def undecorated(func, max_number=10000):
+def undecorated(func, max_number=1000000):
     """
-    returns a function, with at most max_number decorators removed.
+    returns a function, with all decorators removed.
     This is very handy when calling a @xw.script decorated function from another function
 
     Parameters
     ----------
     func : callable
-
+         function to undecorate
+    
     max_number : int
-        maximum number of decorators to remove (default 10000)
+         maximum number of decorators to remove
+         
+         default : 1000000
 
     Returns
     -------
@@ -811,16 +818,110 @@ def undecorated(func, max_number=10000):
 
     Note
     ----
-    Only undecorates decorator which uses a __wrapped__ attribute, most likely via @functools.wraps, which is indeed the case for xw.script, and xwu.timer.
+    Only undecorates decoratos which use a __wrapped__ attribute, most likely via @functools.wraps, which is indeed the case for xw.script, and xwu.timer.
     """
     for _ in range(max_number):
         if hasattr(func, "__wrapped__"):
-            func = func.__wrapped__
+            func =func.__wrapped__
         else:
             break
+                     
     return func
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="xlwings_utils.py")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # extract
+    p_extract = subparsers.add_parser("extract", help="Extract data from an excel file")
+    p_extract.add_argument("--mainfile", "-m", help="Path to main file to use", default=None)
+    p_extract.add_argument("--requirementsfile", "-r", help="Path to requirements file to use", default=None)
+    p_extract.add_argument("excel_in", help="Input excel file")
+
+    # replace
+    p_replace = subparsers.add_parser("replace", help="Replace data into an excel file")
+    p_replace.add_argument("--mainfile", "-m", help="Path to main file to use", default=None)
+    p_replace.add_argument("--requirementsfile", "-r", help="Path to requirements file to use", default=None)
+    p_replace.add_argument("excel_in", help="Input excel file")
+    p_replace.add_argument("excel_out", help="Output excel file")
+
+    # info
+    p_info = subparsers.add_parser("info", help="Show info about an excel file")
+    p_info.add_argument("excel_in", help="Input excel file")
+
+    return parser
+
+
+def process(args):
+    if args.command in ("replace", "extract"):
+        if args.mainfile is None and args.requirementsfile is None:
+            print("no mainfile or requirements file specified")
+            sys.exit(0)
+    if args.command=="replace" and args.excel_out == "*":
+        args.excel_out=args.excel_in
+        
+    found = set()
+    if args.command == "replace":
+        zip_buffer = io.BytesIO()
+        zf = zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED)
+    with zipfile.ZipFile(args.excel_in, "r") as zin:
+        for item in zin.infolist():
+            item_contents = zin.read(item.filename)
+            if item.filename == "xl/webextensions/webextension1.xml":
+                root = etree.fromstring(item_contents)
+                ns = {"we": "http://schemas.microsoft.com/office/webextensions/webextension/2010/11"}
+                for prop in root.findall(".//we:property", ns):
+                    name = prop.get("name")
+                    found.add(name)
+                    value = prop.get("value", "")
+                    contents = json.loads(value).replace("\r", "")
+                    match args.command:
+                        case "info":
+                            print(name)
+                            for line in contents.splitlines():
+                                print(f"   {line}")
+                        case "extract":
+                            for propname, file in [("main.py", args.mainfile), ("requirements.txt", args.requirementsfile)]:
+                                if name == propname and file is not None:
+                                    with open(file, "w") as f:
+                                        f.write(contents)
+                                    print(f"written {file}")
+                        case "replace":
+                            for propname, file in [("main.py", args.mainfile), ("requirements.txt", args.requirementsfile)]:
+                                if name == propname and file is not None:
+                                    with open(file, "r") as f:
+                                        lines = f.read().splitlines()
+                                        new_contents = json.dumps("\r\n".join(lines))
+                                        prop.set("value", new_contents)
+                if args.command == "replace":
+                    item_contents = etree.tostring(root, encoding="UTF-8", xml_declaration=True, standalone=True, pretty_print=False)
+
+            if args.command == "replace":
+                zf.writestr(item, item_contents)
+
+    error = False
+    if "main.py" not in found:
+        print(f"No main.py found in {args.excel_in}")
+        error = True
+    if "requirements.txt" not in found:
+        print(f"No requirements.txt in {args.excel_in}")
+        error = True
+    if error:
+        sys.exit(0)
+
+    if args.command == "replace":
+        zf.close()
+        zip_buffer.seek(0)
+        with open(args.excel_out, "wb") as f:
+            f.write(zip_buffer.read())
+        print(f"written {args.excel_out}")
+
+
+def main(argv=None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    process(args)
+    print("done")
 
 if __name__ == "__main__":
-    ...
-
+    main()

@@ -169,7 +169,7 @@ def get_repos(owner):
     return result
 
 
-def import_from_folder(orp, owner=missing):
+def import_from_folder(orp):
     """
     imports a module from a folder
 
