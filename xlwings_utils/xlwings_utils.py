@@ -5,7 +5,7 @@
 #  /_/\_\|_|  \_/\_/  |_||_| |_| \__, ||___/ _____  \__,_| \__||_||_||___/
 #                                |___/      |_____|
 
-__version__ = "26.0.4"
+__version__ = "26.0.5"
 
 from pathlib import Path
 import sys
@@ -793,14 +793,17 @@ def timer(func):
     return wrapper
 
 
-def undecorated(func):
+def undecorated(func, max_number=10000):
     """
-    returns a function, with all decorators removed.
+    returns a function, with at most max_number decorators removed.
     This is very handy when calling a @xw.script decorated function from another function
 
     Parameters
     ----------
     func : callable
+
+    max_number : int
+        maximum number of decorators to remove (default 10000)
 
     Returns
     -------
@@ -808,10 +811,16 @@ def undecorated(func):
 
     Note
     ----
-    Only undecorates decorator which use a __wrapped__ attribute, most likely via @functools.wraps, which is indeed the case for xw.script, and xwu.timer.
+    Only undecorates decorator which uses a __wrapped__ attribute, most likely via @functools.wraps, which is indeed the case for xw.script, and xwu.timer.
     """
-    return undecorated(func.__wrapped__) if hasattr(func, "__wrapped__") else func
+    for _ in range(max_number):
+        if hasattr(func, "__wrapped__"):
+            func = func.__wrapped__
+        else:
+            break
+    return func
 
 
 if __name__ == "__main__":
     ...
+

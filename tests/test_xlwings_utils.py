@@ -2,15 +2,38 @@ import os
 import sys
 from pathlib import Path
 import io
+import functools
 
 if __name__ == "__main__":  # to make the tests run without the pytest cli
-    import os, sys # three lines to use the local package and chdir
+    import os, sys  # three lines to use the local package and chdir
+
     os.chdir(os.path.dirname(__file__))
     sys.path.insert(0, os.path.dirname(__file__) + "/../")
 
 import pytest
 
 import xlwings_utils as xwu
+
+
+def test_undecorated():
+    def double_arg(func):
+        @functools.wraps(func)
+        def wrapper(x):
+            return func(x * 2)
+
+        return wrapper
+
+    @double_arg
+    @double_arg
+    def add2(x):
+        return x + 2
+
+    assert xwu.undecorated(add2)(1) == 3
+    assert xwu.undecorated(add2, max_number=3)(1) == 3
+    assert xwu.undecorated(add2, max_number=2)(1) == 3
+    assert xwu.undecorated(add2, max_number=1)(1) == 4
+    assert xwu.undecorated(add2, max_number=0)(1) == 6
+    assert add2(1) == 6
 
 
 def test_block0():
@@ -251,3 +274,4 @@ def test_capture(capsys):
 
 if __name__ == "__main__":
     pytest.main(["-vv", "-s", "-x", __file__])
+

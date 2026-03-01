@@ -2,6 +2,10 @@
 
 [The full documentation can be found here.](https://www.salabim.org/xlwings_utils)
 
+#### version 26.0.5  2026-01-19
+
+  - the `undecorated` function, now has an extra parameter `max_number`, which can be used to limit the number of removed decorators.
+  
 #### version 26.0.4  2026-01-18
 
   - added `undecorated` function. With this, a function can be undecorated. This can be very useful in xlwings Lite if you would like to call a function that is decorated with @xw.script. Example:

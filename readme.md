@@ -439,15 +439,24 @@ xlwings_utils contains the `undecorated` function to remove the decorators from 
 ```
 The function works only for decorators that use the __wrapped__ attribute, most likely via @functools.wraps, which is indeed the case for xw.script, and xwu.timer. 
 
+By default, `undecorated` removes all decorators. With the parameter `max_number`, that number can be limited:
 ```
-
-
-
-
-
-
-
-
+    @xw.script
+    @xwu.timer
+    def Task_1(book: xw.Book):
+        ...
+    
+    @xw.script
+    @xwu.timer
+    def Task_2(book: xw.Book):
+        ...
+        
+    @xw.script    
+    def Task_1_2(book: xw.Book):
+        xwu.undecorated(Task_1, max_number=1)(book)
+        xwu.undecorated(Task_2, max_number=1)(book)    
+```
+Now, the timer decorator will be still in effect for Task_1 and Task_2.
 
 ## Contact info
 
