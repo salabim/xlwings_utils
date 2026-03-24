@@ -2,6 +2,11 @@
 
 [The full documentation can be found here.](https://www.salabim.org/xlwings_utils)
 
+#### version 26.1.1  2026-03-24
+
+  - Added support for extracting and replacing pyproject.toml and settings
+  - Now non existing mainfile, requirementsfile, pyprojectfile and settingsfile can be added (replaced) even if it is not in the excel_in file. 
+
 #### version 26.1.0  2026-03-01
 
   - Now xlwings_utils can be used as a CLI to show, extract or replace information of xlwings Lite enabled workbooks. See the read.me for details.

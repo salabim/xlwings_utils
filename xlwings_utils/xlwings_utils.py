@@ -5,7 +5,7 @@
 #  /_/\_\|_|  \_/\_/  |_||_| |_| \__, ||___/ _____  \__,_| \__||_||_||___/
 #                                |___/      |_____|
 
-__version__ = "26.1.0"
+__version__ = "26.1.1"
 
 from pathlib import Path
 import sys
@@ -15,7 +15,7 @@ import datetime
 import functools
 import argparse
 import zipfile
-from lxml import etree 
+from lxml import etree
 import json
 import io
 
@@ -806,10 +806,10 @@ def undecorated(func, max_number=1000000):
     ----------
     func : callable
          function to undecorate
-    
+
     max_number : int
          maximum number of decorators to remove
-         
+
          default : 1000000
 
     Returns
@@ -822,26 +822,42 @@ def undecorated(func, max_number=1000000):
     """
     for _ in range(max_number):
         if hasattr(func, "__wrapped__"):
-            func =func.__wrapped__
+            func = func.__wrapped__
         else:
             break
-                     
+
     return func
+
+
+class Option:
+    def __init__(self, option_name, short_name, help_text, filename):
+        self.option_name = option_name
+        self.short_name = short_name
+        self.help_text = help_text
+        self.filename = filename
+
+
+options = [
+    Option("mainfile", "m", "Path to main file to use", "main.py"),
+    Option("requirementsfile", "r", "Path to requirements file to use", "requirements.txt"),
+    Option("pyprojecttomlfile", "p", "Path to pyproject file to use", "pyproject.toml"),
+    Option("settingsfile", "s", "Path to settings file to use,", "xlwingsSettingsWorkbook"),
+]
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="xlwings_utils.py")
     subparsers = parser.add_subparsers(dest="command", required=True)
-
     # extract
     p_extract = subparsers.add_parser("extract", help="Extract data from an excel file")
-    p_extract.add_argument("--mainfile", "-m", help="Path to main file to use", default=None)
-    p_extract.add_argument("--requirementsfile", "-r", help="Path to requirements file to use", default=None)
+    for option in options:
+        p_extract.add_argument(f"--{option.option_name}", f"-{option.short_name}", help=option.help_text, default=None)
     p_extract.add_argument("excel_in", help="Input excel file")
 
     # replace
     p_replace = subparsers.add_parser("replace", help="Replace data into an excel file")
-    p_replace.add_argument("--mainfile", "-m", help="Path to main file to use", default=None)
-    p_replace.add_argument("--requirementsfile", "-r", help="Path to requirements file to use", default=None)
+    for option in options:
+        p_replace.add_argument(f"--{option.option_name}", f"-{option.short_name}", help=option.help_text, default=None)
     p_replace.add_argument("excel_in", help="Input excel file")
     p_replace.add_argument("excel_out", help="Output excel file")
 
@@ -854,60 +870,87 @@ def build_parser() -> argparse.ArgumentParser:
 
 def process(args):
     if args.command in ("replace", "extract"):
-        if args.mainfile is None and args.requirementsfile is None:
-            print("no mainfile or requirements file specified")
+        if all(getattr(args, option.option_name, None) is None for option in options):
+            option_names = ", ".join(option.option_name for option in options)
+            print(f"no {option_names} specified")
             sys.exit(0)
-    if args.command=="replace" and args.excel_out == "*":
-        args.excel_out=args.excel_in
-        
+    if args.command == "replace" and args.excel_out == "*":
+        args.excel_out = args.excel_in
+
     found = set()
     if args.command == "replace":
         zip_buffer = io.BytesIO()
         zf = zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED)
+    xlwings_embedded = False
     with zipfile.ZipFile(args.excel_in, "r") as zin:
         for item in zin.infolist():
             item_contents = zin.read(item.filename)
             if item.filename == "xl/webextensions/webextension1.xml":
                 root = etree.fromstring(item_contents)
-                ns = {"we": "http://schemas.microsoft.com/office/webextensions/webextension/2010/11"}
+                ns_map = "http://schemas.microsoft.com/office/webextensions/webextension/2010/11"
+                ns = {"we": ns_map}
+                seen_options = set()
+
                 for prop in root.findall(".//we:property", ns):
+                    xlwings_embedded = True
                     name = prop.get("name")
                     found.add(name)
                     value = prop.get("value", "")
                     contents = json.loads(value).replace("\r", "")
+
                     match args.command:
                         case "info":
                             print(name)
                             for line in contents.splitlines():
                                 print(f"   {line}")
                         case "extract":
-                            for propname, file in [("main.py", args.mainfile), ("requirements.txt", args.requirementsfile)]:
+                            for option in options:
+                                propname = option.filename
+                                file = getattr(args, option.option_name, None)
                                 if name == propname and file is not None:
+                                    seen_options.add(option)
                                     with open(file, "w") as f:
                                         f.write(contents)
                                     print(f"written {file}")
                         case "replace":
-                            for propname, file in [("main.py", args.mainfile), ("requirements.txt", args.requirementsfile)]:
-                                if name == propname and file is not None:
-                                    with open(file, "r") as f:
-                                        lines = f.read().splitlines()
-                                        new_contents = json.dumps("\r\n".join(lines))
-                                        prop.set("value", new_contents)
+                            for option in options:
+                                propname = option.filename
+                                file = getattr(args, option.option_name, None)
+                                if name == propname:
+                                    seen_options.add(option)
+
+                                    if file is not None:
+                                        with open(file, "r") as f:
+                                            lines = f.read().splitlines()
+                                            new_contents = json.dumps("\r\n".join(lines))
+                                            prop.set("value", new_contents)
+
+                if args.command == "extract":
+                    for option in options:
+                        if getattr(args, option.option_name, None):
+                            if not option in seen_options:
+                                print(f"{option.filename} not written, because {option.option_name} is not in {args.excel_in}")
+
                 if args.command == "replace":
+                    for option in options:
+                        if option not in seen_options:
+                            propname = option.filename
+                            file = getattr(args, option.option_name, None)
+                            if file is not None:
+                                with open(file, "r") as f:
+                                    lines = f.read().splitlines()
+                                    contents = json.dumps("\r\n".join(lines))
+                                props = root.find(".//we:properties", ns)
+                                etree.SubElement(props, f"{{{ns['we']}}}property", name=propname, value=contents)
+
                     item_contents = etree.tostring(root, encoding="UTF-8", xml_declaration=True, standalone=True, pretty_print=False)
 
             if args.command == "replace":
                 zf.writestr(item, item_contents)
 
-    error = False
-    if "main.py" not in found:
-        print(f"No main.py found in {args.excel_in}")
-        error = True
-    if "requirements.txt" not in found:
-        print(f"No requirements.txt in {args.excel_in}")
-        error = True
-    if error:
-        sys.exit(0)
+    if not xlwings_embedded:
+        print(f"no action, because xlwings is not embedded in {args.excel_in}")
+        return
 
     if args.command == "replace":
         zf.close()
@@ -922,6 +965,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     process(args)
     print("done")
+
 
 if __name__ == "__main__":
     main()

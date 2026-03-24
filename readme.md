@@ -479,31 +479,29 @@ Besides being used as a module (via import), xlwings_utils can also be used as a
 - With `python -m xlwings_utils info excel_in,`, all xlwings  Lite related info will be revealed. For instance, `python -m xlwings_utils info demo.xlsx` might print:
 
      ```of 
+    xlwingsSettingsWorkbook
+       {"startupBehavior":"taskpane","workbookMode":"developer","pyodideVersion":"0.27.5"}
     xlwingsWorkbookId
-       c86b78bf-3b7e-4028-a2c4-c0e19384b461
+       f7397b57-e95d-4fdb-93e9-959bafb6eea4
     main.py
        import xlwings as xw
     
        @xw.script
        def test(book: xw.Book):
            print(book.fullname)
-    
-    pyodideVersion
-       0.27.5
     addinVersion
-       1.0.0.0-35
+       1.0.0.0-44
     requirements.txt
-       xlwings
-       python-dotenv
-       pyodide-http
-       black
+       xlwings  # required
+       python-dotenv  # required
+       pyodide-http  # required
        xlwings-utils
     done
     ```
+    
+- With `python -m xlwings_utils extract excel_in [-m mainfile] [-r requirementsfile] [-p pyprojecttomlfile] [-s settingsfile]`, the file main.py, requirements.txt, pyproject.toml and the settings may be extracted from a workbook. For instance, `python -m xlwings_utils extract demo.xlsx -m new_main.py -r requirements.txt` will create two files, one containing the current *main.py* and the other the current *requirements.txt*.
 
-- With `python -m xlwings_utils extract excel_in [-m mainfile] [-r requirementsfile]`, the file main.py and requirements.txt may be extracted from a workbook. For instance, `python -m xlwings_utils extract demo.xlsx -m new_main.py -r requirements.txt` will create two files, one containing the current *main.py* and the other the current *requirements.txt*.
-
-- With `python -m xlwings_utils replace excel_in excel_out [-m mainfile] [-r requirementsfile]`, the file main.py and requirements.txt will be replaced by the given files. For instance, `python -m xlwings_utils replace demo.xlsx demo_new.xlsx -m new_main.py` will replace the current *main.py* with the contents of *new_main.py*. The requirements.txt is just copied from the original.
+- With `python -m xlwings_utils replace excel_in excel_out [-m mainfile] [-r requirementsfile]` [-p pyprojecttomlfile] [-s settingsfile], the file main.py, requirements.txt, pyproject.toml and the settings will be replaced by the given files. For instance, `python -m xlwings_utils replace demo.xlsx demo_new.xlsx -m new_main.py` will replace the current *main.py* with the contents of *new_main.py*. In this case, the requirements.txt, pyproject.toml anmd the settings (if present) are just copied from the original.
   If excel_out is `*`', `excel_in` will be used as the destination.
 
 > [!NOTE]
