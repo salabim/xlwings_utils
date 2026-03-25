@@ -830,11 +830,11 @@ def undecorated(func, max_number=1000000):
 
 
 class Option:
-    def __init__(self, option_name, short_name, help_text, filename):
+    def __init__(self, option_name, short_name, help_text, prop_name):
         self.option_name = option_name
         self.short_name = short_name
         self.help_text = help_text
-        self.filename = filename
+        self.prop_name = prop_name
 
 
 options = [
@@ -869,8 +869,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def process(args):
+    for option in options:
+        option.filename = getattr(args, option.option_name, None)
+
     if args.command in ("replace", "extract"):
-        if all(getattr(args, option.option_name, None) is None for option in options):
+        if all(option.filename is None for option in options):
             option_names = ", ".join(option.option_name for option in options)
             print(f"no {option_names} specified")
             sys.exit(0)
@@ -889,59 +892,50 @@ def process(args):
                 root = etree.fromstring(item_contents)
                 ns_map = "http://schemas.microsoft.com/office/webextensions/webextension/2010/11"
                 ns = {"we": ns_map}
-                seen_options = set()
 
                 for prop in root.findall(".//we:property", ns):
                     xlwings_embedded = True
-                    name = prop.get("name")
-                    found.add(name)
+                    prop_name = prop.get("name")
+                    found.add(prop_name)
                     value = prop.get("value", "")
                     contents = json.loads(value).replace("\r", "")
 
                     match args.command:
                         case "info":
-                            print(name)
+                            print(prop_name)
                             for line in contents.splitlines():
                                 print(f"   {line}")
                         case "extract":
                             for option in options:
-                                propname = option.filename
-                                file = getattr(args, option.option_name, None)
-                                if name == propname and file is not None:
-                                    seen_options.add(option)
-                                    with open(file, "w") as f:
-                                        f.write(contents)
-                                    print(f"written {file}")
+                                if option.prop_name == prop_name:
+                                    if option.filename is not None:
+                                        with open(option.filename, "w") as f:
+                                            f.write(contents)
+                                        print(f"written {option.filename}")
+                                        option.filename = None  # indicates that it has been extracted
                         case "replace":
                             for option in options:
-                                propname = option.filename
-                                file = getattr(args, option.option_name, None)
-                                if name == propname:
-                                    seen_options.add(option)
-
-                                    if file is not None:
-                                        with open(file, "r") as f:
+                                if option.prop_name == prop_name:
+                                    if option.filename is not None:
+                                        with open(option.filename, "r") as f:
                                             lines = f.read().splitlines()
                                             new_contents = json.dumps("\r\n".join(lines))
                                             prop.set("value", new_contents)
+                                        option.filename = None  # indicates that it has been replaced
 
                 if args.command == "extract":
                     for option in options:
-                        if getattr(args, option.option_name, None):
-                            if not option in seen_options:
-                                print(f"{option.filename} not written, because {option.option_name} is not in {args.excel_in}")
+                        if option.filename is not None:
+                            print(f"{option.filename} not written, because {option.prop_name} is not in {args.excel_in}")
 
                 if args.command == "replace":
                     for option in options:
-                        if option not in seen_options:
-                            propname = option.filename
-                            file = getattr(args, option.option_name, None)
-                            if file is not None:
-                                with open(file, "r") as f:
-                                    lines = f.read().splitlines()
-                                    contents = json.dumps("\r\n".join(lines))
-                                props = root.find(".//we:properties", ns)
-                                etree.SubElement(props, f"{{{ns['we']}}}property", name=propname, value=contents)
+                        if option.filename is not None:
+                            with open(option.filename, "r") as f:
+                                lines = f.read().splitlines()
+                                contents = json.dumps("\r\n".join(lines))
+                            props = root.find(".//we:properties", ns)
+                            etree.SubElement(props, f"{{{ns['we']}}}property", name=option.prop_name, value=contents)
 
                     item_contents = etree.tostring(root, encoding="UTF-8", xml_declaration=True, standalone=True, pretty_print=False)
 
